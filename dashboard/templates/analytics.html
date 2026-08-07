@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SENTINEL — Analytics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+{% include "_nav.html" %}
+
+<main class="layout layout-single">
+
+  <section class="panel">
+    <div class="panel-head"><h2>Overview</h2></div>
+    <div class="cards-row" id="analyticsCards"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Alerts by Hour of Day</h2>
+      <span class="console-hint">Aggregated across all logged incidents</span>
+    </div>
+    <canvas id="timelineChart" height="90"></canvas>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Heat Map — Alerts by Camera × Hour</h2>
+    </div>
+    <div id="heatmapContainer" class="heatmap-container"></div>
+  </section>
+
+</main>
+
+<script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
+</body>
+</html>

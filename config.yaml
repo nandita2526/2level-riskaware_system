@@ -1,0 +1,145 @@
+# ============================================================
+# Risk-Aware Video Surveillance System — Configuration
+# Parameter values default to those reported in the survey paper
+# ============================================================
+
+device: "cpu"                     # "cuda" if you have a GPU, else "cpu"
+
+# ---------------- Stage 1: Video Ingestion ----------------
+video:
+  target_fps: 30
+  frame_size: [640, 640]           # resize (W, H)
+  sequence_length: 16              # T = 16 frames per classification window
+  normalize: true                  # scale pixel intensities to [0, 1]
+
+# ---------------- Stage 2: Person Detection (YOLOv8) ----------------
+detector:
+  model_name: "yolov8n.pt"         # nano variant for low latency
+  confidence_threshold: 0.5
+  classes: [0, 24, 26, 28]          # COCO: 0=person, 24=backpack, 26=handbag, 28=suitcase (for abandoned-object rule)
+  iou_threshold: 0.45
+
+# ---------------- Stage 3: CNN Feature Extraction ----------------
+feature_extractor:
+  backbone: "mobilenet_v3_small"   # torchvision backbone
+  feature_dim: 576
+  dropout: 0.3
+  crop_size: [224, 224]
+
+# ---------------- Stage 4: Temporal Classifier (LSTM) ----------------
+lstm:
+  input_dim: 576
+  hidden_dim: 256
+  num_layers: 2
+  dropout: 0.3
+  num_classes: 4
+  class_names:
+    - "Normal"
+    - "Loitering"
+    - "Unattended_Object"
+    - "Suspicious_Theft_Gesture"
+  checkpoint_path: "models/best_lstm.pt"
+
+# ---------------- Stage 4A: Level-1 Rule Engine (no AI) ----------------
+# Every rule contributes an independent [0,1] score for a tracked person /
+# region. The Level-1 risk score is the MAX of all triggered rule scores
+# (a single strong rule is enough to escalate — Slide-style "OR" logic).
+rule_engine:
+  loitering:
+    enabled: true
+    seconds_threshold: 30          # Module 4A: "Person loitering > 30 sec"
+    radius_px: 60                  # stays within this radius of its own centroid
+    score: 0.55
+  restricted_zone:
+    enabled: true
+    # normalised polygon [[x,y], ...] in 0..1 fractions of frame width/height
+    polygon: [[0.70, 0.0], [1.0, 0.0], [1.0, 1.0], [0.70, 1.0]]
+    score: 0.90                    # entering a restricted zone is treated as very severe
+  running:
+    enabled: true
+    speed_px_per_sec_threshold: 260
+    score: 0.65
+  crowd_density:
+    enabled: true
+    count_threshold: 6             # persons simultaneously in frame
+    score: 0.60
+  abandoned_object:
+    enabled: true
+    object_classes: [24, 26, 28]   # COCO: backpack, handbag, suitcase
+    stationary_seconds_threshold: 20
+    unattended_radius_px: 120      # no person within this radius counts as "unattended"
+    score: 0.80
+  fight_detection:
+    enabled: true
+    proximity_px: 80               # two tracks closer than this ...
+    relative_speed_px_per_sec_threshold: 300   # ... moving rapidly relative to each other
+    score: 0.85
+  fall_detection:
+    enabled: true
+    aspect_ratio_threshold: 1.4    # bbox width/height flips from "tall" to "wide"
+    drop_speed_px_per_sec_threshold: 220
+    score: 0.90
+
+# ---------------- Stage 5: Two-Level Risk Scoring ----------------
+# LEVEL 1 (rule-based, no AI): risk_score = max(triggered rule scores)
+#   risk < level1_ai_verification_threshold -> Dashboard "warning" alert + beep, continue monitoring
+#   risk >= level1_ai_verification_threshold -> escalate to LEVEL 2 (CNN+LSTM AI verification)
+# LEVEL 2 (AI verification): only runs for high-risk tracks flagged by Level 1.
+#   final_score = level1_weight * level1_risk + level2_weight * p_threat (AI confidence)
+level1_ai_verification_threshold: 0.60
+
+risk_weights:
+  level1_weight: 0.4   # weight on the rule-engine (Level-1) score in the final AI-verified score
+  level2_weight: 0.6   # weight on P_threat, the AI verifier's (CNN+LSTM) confidence
+  # legacy single-stage weights, retained for the standalone Module 5 formula / unit tests
+  alpha: 0.5    # weight on P_threat (LSTM max suspicious-class probability)
+  beta: 0.3     # weight on D_persistence (temporal persistence over 2s window)
+  gamma: 0.2    # weight on C_density (normalised crowd density)
+
+persistence_window_seconds: 2.0
+
+risk_tiers:                        # [lower_bound, upper_bound)  -- used for on-screen tier labels
+  normal:   [0.00, 0.40]
+  elevated: [0.40, 0.60]
+  high:     [0.60, 0.85]
+  critical: [0.85, 1.01]
+
+ai_verification:
+  confirmation_windows: 3          # consecutive suspicious LSTM windows required to confirm
+  confirm_probability_threshold: 0.5   # P_threat above this counts as "AI confirms suspicious"
+
+# ---------------- Alert System ----------------
+alerts:
+  audio_enabled: true
+  # Level-1 (rule-based, low/elevated risk) -- short, soft warning beep
+  level1_beep_frequency_hz: 700
+  level1_beep_duration_seconds: 0.35
+  # Level-2 (AI-verified, critical) -- full siren
+  siren_frequency_hz: 1000
+  siren_duration_seconds: 1.5
+  webhook_url: "http://127.0.0.1:5000/alert"   # mock_server.py listens here
+  webhook_timeout_seconds: 3
+  cooldown_seconds: 5              # avoid re-triggering siren every frame while Critical persists
+  level1_cooldown_seconds: 8       # separate, slightly longer cooldown for the Level-1 beep
+
+# ---------------- Evidence Manager (Module 7) ----------------
+evidence:
+  root_dir: "Evidence"             # Evidence/Images/<date>/, Evidence/Videos/<date>/
+  save_images: true
+  save_video_clips: true
+  clip_pre_event_seconds: 3        # seconds of buffered footage kept BEFORE the trigger frame
+  clip_post_event_seconds: 4       # seconds recorded AFTER the trigger frame
+  clip_fps: 15
+  log_path: "logs/evidence_log.csv"
+
+# ---------------- Training ----------------
+training:
+  batch_size: 32
+  epochs: 40
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  synthetic_samples_per_class: 300
+  seed: 42

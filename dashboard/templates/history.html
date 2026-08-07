@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SENTINEL — Alert History</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+{% include "_nav.html" %}
+
+<main class="layout layout-single">
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Alert History <span class="badge-l2">AI-VERIFIED INCIDENTS</span></h2>
+      <span class="console-hint" id="historyCount">Loading…</span>
+    </div>
+    <table class="history-table">
+      <thead>
+        <tr>
+          <th>Date</th><th>Time</th><th>Camera</th><th>Behaviour</th>
+          <th>Risk</th><th>AI Conf.</th><th>Rules</th><th>Evidence</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="historyBody">
+        <tr><td colspan="9" class="empty-state">No incidents logged yet.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+</main>
+
+<!-- Evidence viewer modal -->
+<div class="evidence-modal" id="evidenceModal">
+  <div class="evidence-modal-inner">
+    <button class="evidence-modal-close" id="evidenceModalClose">&times;</button>
+    <h3 id="evidenceModalTitle">Incident</h3>
+    <div id="evidenceModalBody"></div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/history.js') }}"></script>
+</body>
+</html>

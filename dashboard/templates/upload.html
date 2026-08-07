@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SENTINEL — Upload Video</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+
+{% include "_nav.html" %}
+
+<main class="layout layout-single">
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2>Upload Video — Choose File → Upload → Analyze</h2>
+      <span class="console-hint">Runs the same two-level pipeline (Rule Engine → AI Verification) offline</span>
+    </div>
+
+    <div class="upload-form">
+      <input type="file" id="videoFile" accept=".mp4,.avi,.mov,.mkv,.webm">
+      <input type="text" id="uploadCameraId" placeholder="Camera ID (optional, default UPLOAD)" style="max-width:220px;">
+      <button id="uploadBtn" class="btn-primary">Upload &amp; Analyze</button>
+    </div>
+
+    <div id="uploadStatus" class="upload-status" style="display:none;">
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="upload-status-line" id="uploadStatusLine">Queued...</div>
+    </div>
+  </section>
+
+  <section class="panel" id="summaryPanel" style="display:none;">
+    <div class="panel-head"><h2>Summary</h2></div>
+    <div class="cards-row" id="summaryCards"></div>
+  </section>
+
+  <section class="panel" id="timelinePanel" style="display:none;">
+    <div class="panel-head">
+      <h2>Timeline</h2>
+      <span class="console-hint">Detected Level-1 warnings and Level-2 AI-verified alerts, in video-time order</span>
+    </div>
+    <div class="console-log" id="timelineConsole"></div>
+  </section>
+
+</main>
+
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
+</body>
+</html>

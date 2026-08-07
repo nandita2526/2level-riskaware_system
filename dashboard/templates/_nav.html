@@ -1,0 +1,18 @@
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-dot" id="statusDot"></span>
+    <span class="brand-name">SENTINEL</span>
+    <span class="brand-sub">Risk-Aware Surveillance Console</span>
+  </div>
+  <nav class="topnav">
+    <a href="/" class="topnav-link {{ 'active' if active_page == 'live' }}">Live Camera</a>
+    <a href="/upload" class="topnav-link {{ 'active' if active_page == 'upload' }}">Upload Video</a>
+    <a href="/history" class="topnav-link {{ 'active' if active_page == 'history' }}">Alert History</a>
+    <a href="/analytics" class="topnav-link {{ 'active' if active_page == 'analytics' }}">Analytics</a>
+  </nav>
+  <div class="topbar-right">
+    <div class="meta-chip">CAM <span id="cameraId">01</span></div>
+    <div class="meta-chip" id="modelChip">MODEL: —</div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+</header>
