@@ -1,109 +1,69 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SENTINEL — Live Camera</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
-<body>
+{% extends "base.html" %}
+{% block title %}Live Camera{% endblock %}
 
-{% include "_nav.html" %}
+{% block content %}
+<div class="page-head">
+  <h1>LIVE CAMERA</h1>
+  <p>Real-time annotated feed · per-person risk tracking · Level-1 / Level-2 alert console</p>
+</div>
 
-<main class="layout">
-
-  <!-- Video panel -->
-  <section class="panel video-panel">
-    <div class="panel-head">
-      <h2>Live Feed</h2>
-      <span class="fps-badge"><span id="fpsValue">0.0</span> FPS</span>
-    </div>
-    <div class="video-frame">
-      <img id="videoStream" src="/video_feed" alt="Live surveillance feed">
-      <div class="video-scan"></div>
-    </div>
-    <div class="source-switcher">
-      <input type="text" id="sourceInput" placeholder="Webcam index (0), or rtsp://camera-ip/stream">
-      <input type="text" id="cameraIdInput" placeholder="Camera ID (e.g. CAM_02)" style="max-width:160px;">
-      <button id="sourceSwitchBtn" class="btn-primary">Switch Source</button>
-      <span class="source-hint">Webcam / CCTV / RTSP IP camera</span>
-    </div>
-  </section>
-
-  <!-- Right sidebar -->
-  <aside class="sidebar">
-
-    <div class="cards-row">
-      <div class="stat-card">
-        <span class="stat-label">Tracked</span>
-        <span class="stat-value" id="trackedCount">0</span>
+<div class="live-grid">
+  <div class="panel">
+    <div class="hud-frame" id="hudFrame">
+      <img src="/video_feed" alt="Live camera feed" id="feedImg">
+      <div class="hud-corner tl"></div>
+      <div class="hud-corner tr"></div>
+      <div class="hud-corner bl"></div>
+      <div class="hud-corner br"></div>
+      <div class="hud-readout">
+        <span>FPS <b id="hudFps">—</b></span>
+        <span>UPTIME <b id="hudUptime">—</b>s</span>
+        <span>FRAME <b id="hudFrames">—</b></span>
       </div>
-      <div class="stat-card tier-normal">
-        <span class="stat-label">Normal</span>
-        <span class="stat-value" id="normalCount">0</span>
-      </div>
-      <div class="stat-card tier-elevated">
-        <span class="stat-label">Warning (L1)</span>
-        <span class="stat-value" id="elevatedCount">0</span>
-      </div>
-      <div class="stat-card tier-critical">
-        <span class="stat-label">Critical (L2·AI)</span>
-        <span class="stat-value" id="criticalCount">0</span>
+      <div class="risk-gauge-group" id="riskGaugeGroup">
+        <svg class="risk-gauge" width="56" height="56" viewBox="0 0 56 56">
+          <circle class="risk-gauge-track" cx="28" cy="28" r="22"></circle>
+          <circle class="risk-gauge-fill" id="riskGaugeFill" cx="28" cy="28" r="22"
+                  stroke-dasharray="138.2" stroke-dashoffset="138.2"></circle>
+        </svg>
+        <div class="risk-gauge-text"><span class="v" id="riskGaugeVal">0.00</span><span class="l">RISK</span></div>
       </div>
     </div>
+    <div class="feed-controls">
+      <input type="text" id="sourceInput" placeholder="Webcam index (0), video path, or RTSP URL">
+      <input type="text" id="cameraIdInput" placeholder="Camera ID" style="max-width:140px;">
+      <button class="btn btn-primary" id="switchSourceBtn">Switch Source</button>
+    </div>
+  </div>
 
-    <div class="panel tracks-panel">
-      <div class="panel-head">
-        <h2>Tracked Persons</h2>
-        <span class="uptime" id="uptime">Uptime 0s</span>
+  <div class="side-stack">
+    <div class="panel">
+      <div class="panel-head"><h2>Risk Tiers · Active Tracks</h2></div>
+      <div class="panel-body">
+        <div class="tier-cards" id="tierCards">
+          <div class="tier-card safe"><div class="n">0</div><div class="lbl">Safe</div></div>
+          <div class="tier-card warn"><div class="n">0</div><div class="lbl">Watch</div></div>
+          <div class="tier-card crit"><div class="n">0</div><div class="lbl">Critical</div></div>
+        </div>
+        <div class="track-list" id="trackList">
+          <div class="empty-row">No active tracks</div>
+        </div>
       </div>
-      <div class="tracks-list" id="tracksList">
-        <div class="empty-state">No persons currently tracked.</div>
+      <div class="sparkline-wrap">
+        <canvas id="riskSpark"></canvas>
       </div>
     </div>
 
-  </aside>
-
-  <!-- Risk trend -->
-  <section class="panel trend-panel">
-    <div class="panel-head">
-      <h2>Risk Trend — Highest Active Score</h2>
-      <div class="legend">
-        <span class="legend-item"><i class="dot dot-normal"></i>Normal</span>
-        <span class="legend-item"><i class="dot dot-elevated"></i>Warning (L1 rule)</span>
-        <span class="legend-item"><i class="dot dot-high"></i>Escalated (verifying)</span>
-        <span class="legend-item"><i class="dot dot-critical"></i>Critical (L2 AI-verified)</span>
+    <div class="panel">
+      <div class="panel-head"><h2>Alert Console</h2></div>
+      <div class="alert-console" id="alertConsole">
+        <div class="empty-row">No alerts yet — monitoring…</div>
       </div>
     </div>
-    <canvas id="riskChart" height="90"></canvas>
-  </section>
+  </div>
+</div>
+{% endblock %}
 
-  <!-- Level-1 warning console -->
-  <section class="panel console-panel">
-    <div class="panel-head">
-      <h2>Level-1 Warnings <span class="badge-l1">RULE ENGINE</span></h2>
-      <span class="console-hint">Rule-triggered, beep only — no AI used</span>
-    </div>
-    <div class="console-log" id="warningConsole">
-      <div class="console-line console-empty">&gt; no rule-based warnings yet</div>
-    </div>
-  </section>
-
-  <!-- Level-2 critical alert console -->
-  <section class="panel console-panel">
-    <div class="panel-head">
-      <h2>Level-2 Critical Alerts <span class="badge-l2">AI-VERIFIED</span></h2>
-      <span class="console-hint">CNN+LSTM confirmed, most recent first</span>
-    </div>
-    <div class="console-log" id="alertConsole">
-      <div class="console-line console-empty">&gt; system nominal — no critical alerts yet</div>
-    </div>
-  </section>
-
-</main>
-
-<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
-</body>
-</html>
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/live.js') }}"></script>
+{% endblock %}

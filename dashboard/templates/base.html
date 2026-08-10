@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}RISKWATCH{% endblock %} · RISKWATCH</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+{% block head %}{% endblock %}
+</head>
+<body>
+
+<div class="scanline-overlay" aria-hidden="true"></div>
+<div class="crit-vignette" id="critVignette" aria-hidden="true"></div>
+
+<header class="console-header">
+  <div class="brand">
+    <span class="brand-mark" id="pulseDot"></span>
+    <span class="brand-name">RISKWATCH</span>
+    <span class="brand-sub">behaviour risk console</span>
+  </div>
+
+  <nav class="tabs">
+    <a href="/" class="tab {% if active_page == 'live' %}active{% endif %}">
+      <span class="tab-idx">01</span>Live Camera
+    </a>
+    <a href="/upload" class="tab {% if active_page == 'upload' %}active{% endif %}">
+      <span class="tab-idx">02</span>Upload Video
+    </a>
+    <a href="/history" class="tab {% if active_page == 'history' %}active{% endif %}">
+      <span class="tab-idx">03</span>Alert History
+    </a>
+    <a href="/analytics" class="tab {% if active_page == 'analytics' %}active{% endif %}">
+      <span class="tab-idx">04</span>Analytics
+    </a>
+  </nav>
+
+  <div class="status-chip" id="globalStatusChip">
+    <span class="status-dot" id="globalStatusDot"></span>
+    <span id="globalStatusText">CONNECTING…</span>
+    <span class="status-cam" id="globalCameraId">—</span>
+  </div>
+</header>
+
+<main class="page">
+  {% block content %}{% endblock %}
+</main>
+
+<div id="toastRoot" class="toast-root" aria-live="polite"></div>
+
+<script src="{{ url_for('static', filename='js/common.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

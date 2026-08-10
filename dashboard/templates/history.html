@@ -1,48 +1,46 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SENTINEL — Alert History</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
-<body>
+{% extends "base.html" %}
+{% block title %}Alert History{% endblock %}
 
-{% include "_nav.html" %}
-
-<main class="layout layout-single">
-
-  <section class="panel">
-    <div class="panel-head">
-      <h2>Alert History <span class="badge-l2">AI-VERIFIED INCIDENTS</span></h2>
-      <span class="console-hint" id="historyCount">Loading…</span>
-    </div>
-    <table class="history-table">
-      <thead>
-        <tr>
-          <th>Date</th><th>Time</th><th>Camera</th><th>Behaviour</th>
-          <th>Risk</th><th>AI Conf.</th><th>Rules</th><th>Evidence</th><th></th>
-        </tr>
-      </thead>
-      <tbody id="historyBody">
-        <tr><td colspan="9" class="empty-state">No incidents logged yet.</td></tr>
-      </tbody>
-    </table>
-  </section>
-
-</main>
-
-<!-- Evidence viewer modal -->
-<div class="evidence-modal" id="evidenceModal">
-  <div class="evidence-modal-inner">
-    <button class="evidence-modal-close" id="evidenceModalClose">&times;</button>
-    <h3 id="evidenceModalTitle">Incident</h3>
-    <div id="evidenceModalBody"></div>
-  </div>
+{% block content %}
+<div class="page-head">
+  <h1>ALERT HISTORY</h1>
+  <p>Every saved incident, AI-verified at Level-2, with snapshot and clip evidence</p>
 </div>
 
+<div class="chip-row" id="quickFilters">
+  <button class="chip active" data-filter="all" type="button">All</button>
+  <button class="chip" data-filter="today" type="button">Today</button>
+  <button class="chip" data-filter="critical" type="button">Critical only</button>
+</div>
+
+<div class="filter-bar">
+  <input type="date" id="filterDate">
+  <input type="text" id="filterCamera" placeholder="Camera ID">
+  <button class="btn" id="clearFilters">Clear</button>
+  <button class="btn" id="refreshHistory" style="margin-left:auto;">Refresh</button>
+</div>
+
+<div class="incident-grid" id="incidentGrid">
+  <div class="empty-row">Loading incidents…</div>
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="modalTitle">Incident</h3>
+      <button class="modal-close" id="modalClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-media" id="modalMedia"></div>
+      <div class="modal-meta" id="modalMeta"></div>
+      <div class="modal-actions">
+        <button class="btn" id="markFpBtn">Mark False Positive</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
 <script src="{{ url_for('static', filename='js/history.js') }}"></script>
-</body>
-</html>
+{% endblock %}

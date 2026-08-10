@@ -1,41 +1,39 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>SENTINEL — Analytics</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-</head>
-<body>
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
 
-{% include "_nav.html" %}
+{% block head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+{% endblock %}
 
-<main class="layout layout-single">
+{% block content %}
+<div class="page-head">
+  <h1>ANALYTICS <span class="live-pulse" title="Auto-refreshing every 15s"></span></h1>
+  <p>Totals, AI-verified count, false-positive rate, average risk, hourly patterns</p>
+</div>
 
-  <section class="panel">
-    <div class="panel-head"><h2>Overview</h2></div>
-    <div class="cards-row" id="analyticsCards"></div>
-  </section>
+<div class="kpi-row" id="kpiRow">
+  <div class="panel kpi-card"><div class="v">—</div><div class="l">Alerts Today</div></div>
+  <div class="panel kpi-card"><div class="v">—</div><div class="l">Alerts All-Time</div></div>
+  <div class="panel kpi-card accent"><div class="v">—</div><div class="l">AI-Verified (L2)</div></div>
+  <div class="panel kpi-card warn"><div class="v">—</div><div class="l">False-Positive Rate</div></div>
+  <div class="panel kpi-card crit"><div class="v">—</div><div class="l">Average Risk</div></div>
+</div>
 
-  <section class="panel">
-    <div class="panel-head">
-      <h2>Alerts by Hour of Day</h2>
-      <span class="console-hint">Aggregated across all logged incidents</span>
+<div class="chart-grid">
+  <div class="panel">
+    <div class="panel-head"><h2>Hourly Timeline</h2></div>
+    <div class="chart-body"><canvas id="timelineChart" height="90"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Camera × Hour Heatmap</h2></div>
+    <div class="chart-body">
+      <div class="heatmap-scroll" id="heatmapWrap"></div>
     </div>
-    <canvas id="timelineChart" height="90"></canvas>
-  </section>
+  </div>
+</div>
+{% endblock %}
 
-  <section class="panel">
-    <div class="panel-head">
-      <h2>Heat Map — Alerts by Camera × Hour</h2>
-    </div>
-    <div id="heatmapContainer" class="heatmap-container"></div>
-  </section>
-
-</main>
-
+{% block scripts %}
 <script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
-</body>
-</html>
+{% endblock %}

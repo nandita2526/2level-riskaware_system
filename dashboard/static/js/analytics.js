@@ -1,85 +1,108 @@
-/* Analytics page: totals, timeline chart, camera x hour heatmap */
+// analytics.js — powers the Analytics page.
 
-function fmtClock() {
-  const now = new Date();
-  const el = document.getElementById("clock");
-  if (el) el.textContent = now.toLocaleTimeString("en-GB");
+let timelineChart = null;
+
+function setKpis(data) {
+  const cards = document.querySelectorAll("#kpiRow .kpi-card .v");
+  animateNumber(cards[0], data.total_alerts_today ?? 0, { decimals: 0 });
+  animateNumber(cards[1], data.total_alerts_all_time ?? 0, { decimals: 0 });
+  animateNumber(cards[2], data.total_ai_verified_alerts ?? 0, { decimals: 0 });
+  animateNumber(cards[3], (data.false_positive_rate ?? 0) * 100, { decimals: 1, suffix: "%" });
+  animateNumber(cards[4], data.average_risk ?? 0, { decimals: 2 });
 }
-setInterval(fmtClock, 1000);
-fmtClock();
+
+function renderTimeline(timeline) {
+  const ctx = document.getElementById("timelineChart");
+  const labels = (timeline || []).map(p => p.hour);
+  const counts = (timeline || []).map(p => p.count);
+
+  if (timelineChart) { timelineChart.destroy(); }
+  timelineChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [{
+        label: "Alerts",
+        data: counts,
+        backgroundColor: "rgba(56,189,248,.55)",
+        hoverBackgroundColor: "#38BDF8",
+        borderRadius: 3,
+        maxBarThickness: 18,
+      }],
+    },
+    options: {
+      responsive: true,
+      animation: { duration: 500, easing: "easeOutQuart" },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: { color: "#7C8896", font: { family: "JetBrains Mono", size: 10 } },
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: "#232B34" },
+          ticks: { color: "#7C8896", font: { family: "JetBrains Mono", size: 10 }, precision: 0 },
+        },
+      },
+    },
+  });
+}
+
+function heatColor(count, max) {
+  if (!count) return "var(--panel-inset)";
+  const t = Math.min(1, count / Math.max(1, max));
+  // interpolate from dim cyan to hot red as intensity rises
+  const r = Math.round(56 + t * (248 - 56));
+  const g = Math.round(189 - t * (189 - 113));
+  const b = Math.round(248 - t * (248 - 113));
+  return `rgb(${r},${g},${b})`;
+}
+
+function renderHeatmap(heatmap) {
+  const wrap = document.getElementById("heatmapWrap");
+  if (!heatmap || !heatmap.length) {
+    wrap.innerHTML = `<div class="empty-row">No incident data yet.</div>`;
+    return;
+  }
+
+  const maxCount = Math.max(1, ...heatmap.flatMap(row => row.hours.map(h => h.count)));
+  const hourLabels = heatmap[0].hours.map(h => h.hour);
+
+  let html = `<table class="heatmap-table"><thead><tr><td></td>`;
+  hourLabels.forEach((h, i) => {
+    html += `<td class="heatmap-row-label" style="text-align:center;">${i % 3 === 0 ? h : ""}</td>`;
+  });
+  html += `</tr></thead><tbody>`;
+
+  let cellIndex = 0;
+  heatmap.forEach(row => {
+    html += `<tr><td class="heatmap-row-label">${row.camera_id}</td>`;
+    row.hours.forEach(h => {
+      const delay = Math.min(cellIndex * 3, 600);
+      html += `<td>
+        <div class="heatmap-cell" title="${row.camera_id} · ${h.hour}:00 · ${h.count} alerts"
+             style="background:${heatColor(h.count, maxCount)};animation-delay:${delay}ms"></div>
+      </td>`;
+      cellIndex++;
+    });
+    html += `</tr>`;
+  });
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+}
 
 async function loadAnalytics() {
   try {
     const res = await fetch("/api/analytics");
     const data = await res.json();
-    renderCards(data);
-    drawTimeline(data.timeline || []);
-    renderHeatmap(data.heatmap || []);
-  } catch (err) {
-    console.error("Failed to load analytics:", err);
+    setKpis(data);
+    renderTimeline(data.timeline);
+    renderHeatmap(data.heatmap);
+  } catch (e) {
+    showToast("Could not load analytics", "critical");
   }
-}
-
-function renderCards(data) {
-  const cards = document.getElementById("analyticsCards");
-  cards.innerHTML = `
-    <div class="stat-card"><span class="stat-label">Total Alerts Today</span><span class="stat-value">${data.total_alerts_today}</span></div>
-    <div class="stat-card tier-critical"><span class="stat-label">AI-Verified Alerts</span><span class="stat-value">${data.total_ai_verified_alerts}</span></div>
-    <div class="stat-card tier-elevated"><span class="stat-label">False Positive Rate</span><span class="stat-value">${(data.false_positive_rate * 100).toFixed(1)}%</span></div>
-    <div class="stat-card"><span class="stat-label">Average Risk</span><span class="stat-value">${data.average_risk.toFixed(2)}</span></div>
-    <div class="stat-card"><span class="stat-label">Total Alerts (all time)</span><span class="stat-value">${data.total_alerts_all_time}</span></div>
-  `;
-}
-
-function drawTimeline(timeline) {
-  const canvas = document.getElementById("timelineChart");
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  const ctx = canvas.getContext("2d");
-  ctx.scale(dpr, dpr);
-
-  const W = rect.width, H = rect.height;
-  ctx.clearRect(0, 0, W, H);
-
-  if (!timeline.length) return;
-  const maxCount = Math.max(1, ...timeline.map(t => t.count));
-  const barW = W / timeline.length;
-
-  timeline.forEach((t, i) => {
-    const barH = (t.count / maxCount) * (H - 24);
-    ctx.fillStyle = t.count > 0 ? "rgba(23,227,176,0.55)" : "rgba(255,255,255,0.06)";
-    ctx.fillRect(i * barW + 2, H - barH - 18, barW - 4, barH);
-    ctx.fillStyle = "#6E7F8D";
-    ctx.font = "9px IBM Plex Mono";
-    ctx.textAlign = "center";
-    ctx.fillText(t.hour, i * barW + barW / 2, H - 4);
-  });
-}
-
-function renderHeatmap(heatmap) {
-  const container = document.getElementById("heatmapContainer");
-  if (!heatmap.length) {
-    container.innerHTML = `<div class="empty-state">No incidents logged yet.</div>`;
-    return;
-  }
-
-  const maxCount = Math.max(1, ...heatmap.flatMap(row => row.hours.map(h => h.count)));
-
-  container.innerHTML = heatmap.map(row => `
-    <div class="heatmap-row">
-      <span class="heatmap-cam-label">${row.camera_id}</span>
-      <div class="heatmap-cells">
-        ${row.hours.map(h => {
-          const alpha = h.count === 0 ? 0.05 : 0.15 + 0.85 * (h.count / maxCount);
-          return `<div class="heatmap-cell" title="${row.camera_id} ${h.hour}:00 — ${h.count} alert(s)"
-                       style="background: rgba(255,59,92,${alpha.toFixed(2)});"></div>`;
-        }).join("")}
-      </div>
-    </div>
-  `).join("");
 }
 
 loadAnalytics();
-setInterval(loadAnalytics, 10000);
+setInterval(loadAnalytics, 15000);

@@ -1,1 +1,2 @@
 timestamp,date,time,camera_id,track_id,behaviour_class,risk_score,ai_confidence,level,triggered_rules,image_path,video_path,false_positive
+1786334028.3324907,2026-08-10,09:23:43,CAM_01,4,Loitering,0.8731,0.8552,2,restricted_zone,Evidence\Images\2026-08-10\09-23-43.jpg,Evidence\Videos\2026-08-10\Incident_01.mp4,

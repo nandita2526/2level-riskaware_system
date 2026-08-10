@@ -11,6 +11,7 @@ MODULE 6 — ALERT & OUTPUT MODULE
 - Renders annotated bounding boxes and risk labels as an overlay on the live
   display / dashboard stream.
 """
+
 import base64
 import csv
 import time
@@ -27,7 +28,7 @@ from modules.utils import setup_logger
 logger = setup_logger(__name__)
 
 try:
-    import simpleaudio as sa
+    import pyttsx3
     _AUDIO_AVAILABLE = True
 except (ImportError, OSError):
     _AUDIO_AVAILABLE = False
@@ -42,64 +43,65 @@ TIER_COLORS = {   # BGR colors for on-screen overlay
 }
 
 
-def _synthesize_tone(frequency_hz: float, duration_s: float, sample_rate: int = 44100,
-                      sweep: bool = True) -> np.ndarray:
-    """Generates a sine-wave tone in memory — no audio asset file needed.
-    `sweep=True` gives the wailing "siren" sweep (Level-2 critical);
-    `sweep=False` gives a flat short "beep" (Level-1 warning)."""
-    t = np.linspace(0, duration_s, int(sample_rate * duration_s), False)
-    freq = frequency_hz + (300 * np.sin(2 * np.pi * 2 * t) if sweep else 0)
-    wave = np.sin(2 * np.pi * freq * t)
-    audio = (wave * 32767 / np.max(np.abs(wave))).astype(np.int16)
-    return audio
-
-
 class AlertOutputModule:
     def __init__(self, cfg=None, log_path: str = None, evidence_manager=None):
         cfg = cfg or CFG
         self.audio_enabled = cfg.alerts.audio_enabled and _AUDIO_AVAILABLE
-        self.siren_frequency_hz = cfg.alerts.siren_frequency_hz
-        self.siren_duration_s = cfg.alerts.siren_duration_seconds
-        self.beep_frequency_hz = cfg.alerts.level1_beep_frequency_hz
-        self.beep_duration_s = cfg.alerts.level1_beep_duration_seconds
+
+        # Voice messages spoken via pyttsx3 for each tier. Falls back to
+        # sensible defaults if not present in config.
+        self.level1_message = getattr(cfg.alerts, "level1_voice_message",
+                                       "Warning. Suspicious activity detected.")
+        self.level2_message = getattr(cfg.alerts, "level2_voice_message",
+                                       "Critical alert. Confirmed suspicious activity. "
+                                       "Security personnel, please respond immediately.")
+        self.tts_rate = getattr(cfg.alerts, "tts_rate", 175)          # words per minute
+        self.tts_volume = getattr(cfg.alerts, "tts_volume", 1.0)      # 0.0 - 1.0
 
         self.webhook_url = cfg.alerts.webhook_url
         self.webhook_timeout = cfg.alerts.webhook_timeout_seconds
         self.cooldown_seconds = cfg.alerts.cooldown_seconds
         self.level1_cooldown_seconds = cfg.alerts.level1_cooldown_seconds
 
-        self._last_critical_time = {}   # track_id -> last time a Level-2 siren fired
-        self._last_warning_time = {}    # track_id -> last time a Level-1 beep fired
-        self._siren_wave = _synthesize_tone(self.siren_frequency_hz, self.siren_duration_s, sweep=True)
-        self._beep_wave = _synthesize_tone(self.beep_frequency_hz, self.beep_duration_s, sweep=False)
+        self._last_critical_time = {}   # track_id -> last time a Level-2 voice alert fired
+        self._last_warning_time = {}    # track_id -> last time a Level-1 voice alert fired
+
+        self._tts_engine = None
+        if self.audio_enabled:
+            try:
+                self._tts_engine = pyttsx3.init()
+                self._tts_engine.setProperty("rate", self.tts_rate)
+                self._tts_engine.setProperty("volume", self.tts_volume)
+            except Exception as e:
+                logger.error(f"Failed to initialize pyttsx3 engine: {e}")
+                self.audio_enabled = False
 
         if cfg.alerts.audio_enabled and not _AUDIO_AVAILABLE:
-            logger.warning("simpleaudio not available on this system — "
-                            "audio alerts disabled, notifications/logging still work.")
+            logger.warning("pyttsx3 not available on this system — "
+                            "voice alerts disabled, notifications/logging still work.")
 
         self.evidence_manager = evidence_manager  # Module 7 (optional; injected by pipeline)
 
         self.log_path = Path(log_path or (Path(__file__).resolve().parent.parent / "logs" / "event_log.csv"))
         self._init_event_log()
 
-    # ---------------- Audio ----------------
+    # ---------------- Audio (pyttsx3 voice alerts) ----------------
     def play_siren(self):
-        """Level-2, AI-verified critical alert — full sweeping siren."""
-        if not self.audio_enabled:
-            return
-        try:
-            sa.play_buffer(self._siren_wave, 1, 2, 44100)
-        except Exception as e:
-            logger.error(f"Failed to play audio siren: {e}")
+        """Level-2, AI-verified critical alert — spoken critical-alert message."""
+        self._speak(self.level2_message)
 
     def play_beep(self):
-        """Level-1, rule-based warning alert — short soft beep."""
-        if not self.audio_enabled:
+        """Level-1, rule-based warning alert — spoken warning message."""
+        self._speak(self.level1_message)
+
+    def _speak(self, message: str):
+        if not self.audio_enabled or self._tts_engine is None:
             return
         try:
-            sa.play_buffer(self._beep_wave, 1, 2, 44100)
+            self._tts_engine.say(message)
+            self._tts_engine.runAndWait()
         except Exception as e:
-            logger.error(f"Failed to play audio beep: {e}")
+            logger.error(f"Failed to play voice alert: {e}")
 
     # ---------------- Push notification ----------------
     def send_push_notification(self, payload: dict):
