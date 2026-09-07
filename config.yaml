@@ -1,0 +1,195 @@
+# ============================================================
+# Risk-Aware Video Surveillance System — Configuration
+# Parameter values default to those reported in the survey paper
+# ============================================================
+
+device: "cpu"                     # "cuda" if you have a GPU, else "cpu"
+
+# ---------------- Stage 1: Video Ingestion ----------------
+video:
+  target_fps: 30
+  frame_size: [640, 640]           # resize (W, H)
+  sequence_length: 16              # T = 16 frames per classification window
+  normalize: true                  # scale pixel intensities to [0, 1]
+  upload_frame_stride: 6           # offline "Upload Video" analysis only: run full
+                                    # detection/tracking/classification on every Nth
+                                    # decoded frame (skipped frames are grabbed but not
+                                    # decoded/processed) so uploads finish much faster
+                                    # on CPU (YOLOv8 + CNN/LSTM inference, not the
+                                    # decode, is what's actually slow — this is the
+                                    # main lever for upload speed). Live camera feeds
+                                    # (main.py, dashboard "/") are unaffected — they
+                                    # always use stride 1. Raise to 8-10 for near-
+                                    # instant uploads on CPU if this is still slow for
+                                    # you; lower toward 1-2 only if you have a GPU
+                                    # (device: "cuda" below) or need finer-grained
+                                    # per-frame loitering/tracking accuracy.
+
+# ---------------- Stage 2: Person Detection (YOLOv8) ----------------
+detector:
+  model_name: "yolov8n.pt"         # nano variant for low latency
+  confidence_threshold: 0.5
+  classes: [0, 24, 26, 28]          # COCO: 0=person, 24=backpack, 26=handbag, 28=suitcase (for abandoned-object rule)
+  iou_threshold: 0.45
+
+# ---------------- Stage 3: CNN Feature Extraction ----------------
+feature_extractor:
+  backbone: "mobilenet_v3_small"   # torchvision backbone
+  feature_dim: 576
+  dropout: 0.3
+  crop_size: [224, 224]
+
+# ---------------- Stage 4: Temporal Classifier (LSTM) ----------------
+lstm:
+  input_dim: 576
+  hidden_dim: 256
+  num_layers: 2
+  dropout: 0.3
+  num_classes: 4
+  class_names:
+    - "Normal"
+    - "Loitering"
+    - "Unattended_Object"
+    - "Suspicious_Theft_Gesture"
+  checkpoint_path: "models/best_lstm.pt"
+
+# ---------------- Stage 4A: Level-1 Rule Engine (no AI) ----------------
+# Every rule contributes an independent [0,1] score for a tracked person /
+# region. The Level-1 risk score is the MAX of all triggered rule scores
+# (a single strong rule is enough to escalate — Slide-style "OR" logic).
+rule_engine:
+  loitering:
+    enabled: true
+    seconds_threshold: 30          # Module 4A: "Person loitering > 30 sec"
+    radius_px: 60                  # stays within this radius of its own centroid
+    score: 0.55
+  restricted_zone:
+    enabled: true
+    # normalised polygon [[x,y], ...] in 0..1 fractions of frame width/height
+    polygon: [[0.70, 0.0], [1.0, 0.0], [1.0, 1.0], [0.70, 1.0]]
+    score: 0.90                    # entering a restricted zone is treated as very severe
+  running:
+    enabled: true
+    speed_px_per_sec_threshold: 260
+    score: 0.65
+  crowd_density:
+    enabled: true
+    count_threshold: 6             # persons simultaneously in frame
+    score: 0.60
+  abandoned_object:
+    enabled: true
+    object_classes: [24, 26, 28]   # COCO: backpack, handbag, suitcase
+    stationary_seconds_threshold: 20
+    unattended_radius_px: 120      # no person within this radius counts as "unattended"
+    score: 0.80
+  fight_detection:
+    enabled: true
+    proximity_px: 80               # two tracks closer than this ...
+    relative_speed_px_per_sec_threshold: 300   # ... moving rapidly relative to each other
+    score: 0.85
+  fall_detection:
+    enabled: true
+    aspect_ratio_threshold: 1.4    # bbox width/height flips from "tall" to "wide"
+    drop_speed_px_per_sec_threshold: 220
+    score: 0.90
+  scene_hazard:
+    # Fire / explosion / blast detection. Unlike every rule above, this is a
+    # property of the whole SCENE, not of a tracked person — a car bomb or a
+    # fire can happen with nobody (and nothing YOLO recognises) anywhere in
+    # frame, so it runs unconditionally on every processed frame instead of
+    # only on detected persons/objects (see pipeline.py). Tuned and verified
+    # against real explosion footage (see module4a_rule_engine.py comments):
+    # a large, static warm-colored surface (e.g. a tan building wall) alone
+    # will NOT trigger this — it also requires a simultaneous motion or
+    # brightness spike, which only a real flash/fire/blast produces.
+    enabled: true
+    fire_color_ratio_threshold: 0.10   # fraction of frame in flame/blast color range
+    flash_brightness_delta: 15         # OR: sudden avg-brightness jump vs previous frame
+    motion_ratio_threshold: 0.12       # OR: fraction of frame that changed abruptly
+    cooldown_seconds: 6                # avoid re-firing every processed frame while it persists
+    score: 0.95
+
+# ---------------- Stage 5: Two-Level Risk Scoring ----------------
+# LEVEL 1 (rule-based, no AI): risk_score = max(triggered rule scores)
+#   risk < level1_ai_verification_threshold -> Dashboard "warning" alert + beep, continue monitoring
+#   risk >= level1_ai_verification_threshold -> escalate to LEVEL 2 (CNN+LSTM AI verification)
+# LEVEL 2 (AI verification): only runs for high-risk tracks flagged by Level 1.
+#   final_score = level1_weight * level1_risk + level2_weight * p_threat (AI confidence)
+level1_ai_verification_threshold: 0.60
+
+risk_weights:
+  level1_weight: 0.4   # weight on the rule-engine (Level-1) score in the final AI-verified score
+  level2_weight: 0.6   # weight on P_threat, the AI verifier's (CNN+LSTM) confidence
+  # legacy single-stage weights, retained for the standalone Module 5 formula / unit tests
+  alpha: 0.5    # weight on P_threat (LSTM max suspicious-class probability)
+  beta: 0.3     # weight on D_persistence (temporal persistence over 2s window)
+  gamma: 0.2    # weight on C_density (normalised crowd density)
+
+persistence_window_seconds: 2.0
+
+risk_tiers:                        # [lower_bound, upper_bound)  -- used for on-screen tier labels
+  normal:   [0.00, 0.40]
+  elevated: [0.40, 0.60]
+  high:     [0.60, 0.85]
+  critical: [0.85, 1.01]
+
+ai_verification:
+  confirmation_windows: 3          # consecutive suspicious LSTM windows required to confirm
+  confirm_probability_threshold: 0.5   # P_threat above this counts as "AI confirms suspicious"
+  # Severe rule hits (fight, fall, restricted-zone entry, abandoned/theft object) are already
+  # near-certain threats on their own. Waiting for `confirmation_windows` consecutive AI windows
+  # before sounding the siren means a real fight/theft/blast-like event can go several seconds
+  # without an alarm. When enabled, a rule score >= critical_rule_bypass_score escalates straight
+  # to a confirmed Level-2 "critical" alert (siren + evidence save) on the very first AI-verification
+  # frame, instead of waiting for the full confirmation window.
+  critical_rule_bypass: true
+  critical_rule_bypass_score: 0.80
+
+# ---------------- Alert System ----------------
+alerts:
+  audio_enabled: true
+  # Level-1 (rule-based, low/elevated risk) -- short, soft warning beep
+  level1_beep_frequency_hz: 700
+  level1_beep_duration_seconds: 0.35
+  # Level-2 (AI-verified, critical) -- full siren
+  siren_frequency_hz: 1000
+  siren_duration_seconds: 1.5
+  webhook_url: "http://127.0.0.1:5000/alert"   # mock_server.py listens here
+  webhook_timeout_seconds: 3
+  cooldown_seconds: 5              # avoid re-triggering siren every frame while Critical persists
+  level1_cooldown_seconds: 8       # separate, slightly longer cooldown for the Level-1 beep
+  alerts_log_path: "logs/alerts_log.csv"   # every *fired* Level-1/Level-2 alert (powers Analytics)
+
+# ---------------- Evidence Manager (Module 7) ----------------
+evidence:
+  root_dir: "Evidence"             # Evidence/Images/<date>/, Evidence/Videos/<date>/
+  save_images: true
+  save_video_clips: true
+  clip_pre_event_seconds: 3        # seconds of buffered footage kept BEFORE the trigger frame
+  clip_post_event_seconds: 4       # seconds recorded AFTER the trigger frame
+  clip_fps: 15
+  log_path: "logs/evidence_log.csv"
+
+# ---------------- Training ----------------
+training:
+  batch_size: 32
+  epochs: 40
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  label_smoothing: 0.05            # softens one-hot targets -> discourages overconfident,
+                                    # memorised (100%-accuracy-looking) predictions
+  early_stopping_patience: 7       # stop if val_loss hasn't improved for this many epochs
+  train_split: 0.8
+  val_split: 0.1
+  test_split: 0.1
+  synthetic_samples_per_class: 300
+  seed: 42
+  # --- synthetic dataset difficulty knobs (training/generate_synthetic_data.py) ---
+  # Tuned down from the original (0.4 / 0.35 / 0.05 / 0.18 -> ~84% test acc) so
+  # class patterns are still non-trivially separable (some noise/jitter/label
+  # ambiguity is kept -> the ceiling is ~98%, not a suspicious 100%) but easier
+  # than before. Validated with a held-out MLP proxy over 3 seeds: 97.5-99.6%.
+  synthetic_noise_std: 0.12         # additive Gaussian feature noise per frame
+  synthetic_signature_jitter: 0.10  # per-sample jitter of each class' archetype vector
+  synthetic_drift_std: 0.015        # slow shared random-walk drift across each sequence
+  synthetic_hard_example_prob: 0.015 # fraction of ambiguous/borderline samples per class

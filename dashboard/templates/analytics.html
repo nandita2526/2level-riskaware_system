@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Analytics{% endblock %}
+
+{% block head %}
+<script src="{{ url_for('static', filename='js/vendor/chart.umd.min.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <h1>ANALYTICS <span class="live-pulse" title="Auto-refreshing every 15s"></span></h1>
+  <p>Totals, AI-verified count, false-positive rate, average risk, hourly patterns</p>
+</div>
+
+<div class="panel" style="margin-bottom:16px; display:flex; align-items:center; gap:10px; padding:12px 16px;">
+  <label for="cameraFilter" style="color:var(--text-dim,#8a93a6); font-size:.85rem;">Camera / Video</label>
+  <select id="cameraFilter" style="background:var(--bg-2,#11141c); color:inherit; border:1px solid var(--border,#232838); border-radius:6px; padding:6px 10px; min-width:220px;">
+    <option value="">All cameras &amp; uploads</option>
+  </select>
+  <span id="cameraFilterHint" style="color:var(--text-dim,#8a93a6); font-size:.8rem;"></span>
+</div>
+
+<div class="kpi-row" id="kpiRow">
+  <div class="panel kpi-card"><div class="v">—</div><div class="l">Alerts Today</div></div>
+  <div class="panel kpi-card"><div class="v">—</div><div class="l">Alerts All-Time</div></div>
+  <div class="panel kpi-card accent"><div class="v">—</div><div class="l">AI-Verified (L2)</div></div>
+  <div class="panel kpi-card warn"><div class="v">—</div><div class="l">False-Positive Rate</div></div>
+  <div class="panel kpi-card crit"><div class="v">—</div><div class="l">Average Risk</div></div>
+</div>
+
+<div class="chart-grid">
+  <div class="panel">
+    <div class="panel-head"><h2>Hourly Timeline</h2></div>
+    <div class="chart-body"><canvas id="timelineChart" height="90"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h2>Camera × Hour Heatmap</h2></div>
+    <div class="chart-body">
+      <div class="heatmap-scroll" id="heatmapWrap"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/analytics.js') }}"></script>
+{% endblock %}
