@@ -86,6 +86,7 @@ class SurveillancePipeline:
         }
         self._fps_smoother = []
         self._scene_event_counter = 0   # gives each fired scene_hazard event a unique synthetic track_id
+        self._tamper_event_counter = 0  # gives each fired camera_tamper event a unique synthetic track_id
 
         if not self.m4_behaviour.loaded_pretrained:
             logger.warning("No trained LSTM checkpoint found at "
@@ -142,6 +143,12 @@ class SurveillancePipeline:
         # every other rule in this file only ever evaluates for detected persons, so without
         # this a video like an exploding car in an empty lot would always show 0 alerts.
         self._check_scene_hazard(raw, display_frame)
+
+        # ---------------- Camera tamper check (lens covered / view blocked) ----------------
+        # Also runs unconditionally and BEFORE detection: a covered/blocked
+        # camera produces zero YOLO detections, so — same reasoning as the
+        # scene-hazard check above — no per-person rule could ever catch it.
+        self._check_camera_tamper(raw, display_frame)
 
         # Module 3 — Detection & Tracking (persons + watched objects e.g. bags)
         detections = self.m3_detect_track.detect_and_track(display_frame)
@@ -331,6 +338,59 @@ class SurveillancePipeline:
             self.latest_stats["recent_alerts"] = self.latest_stats["recent_alerts"][:20]
 
         cv2.putText(display_frame, f"HAZARD: {label}", (16, 34),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+        cv2.rectangle(display_frame, (4, 4),
+                       (display_frame.shape[1] - 4, display_frame.shape[0] - 4), (0, 0, 255), 4)
+
+    def _check_camera_tamper(self, raw: dict, display_frame):
+        """Lens covered / camera view blocked or closed — a whole-frame
+        event, same shape as _check_scene_hazard() above. Fires straight to
+        a confirmed Level-2 critical alert, since a blocked camera means the
+        system is effectively blind and that needs immediate attention —
+        see RuleEngineModule.evaluate_camera_tamper() for the detection logic.
+        """
+        video_time = raw.get("video_time", time.time())
+        tamper = self.m4a_rules.evaluate_camera_tamper(display_frame, timestamp=video_time)
+        if not tamper.is_triggered:
+            return
+
+        self._tamper_event_counter += 1
+        tamper_id = f"TAMPER_{self._tamper_event_counter}"
+        label = rule_label(tamper.triggered_rules)
+
+        level1 = self.m5_risk.evaluate_level1(tamper)
+        final_risk = level1
+        if self.m5_risk.needs_ai_verification(level1.score) and \
+                self.m5_risk.is_critical_rule_bypass(level1.score):
+            final_risk = self.m5_risk.evaluate_immediate_critical(level1)
+
+        warning_fired = self.m6_alert_output.trigger_level1(tamper_id, level1, camera_id=self.camera_id)
+        if warning_fired:
+            self.latest_stats["recent_warnings"].insert(0, {
+                "track_id": tamper_id,
+                "risk_score": round(level1.score, 3),
+                "camera_id": self.camera_id,
+                "triggered_rules": level1.triggered_rules,
+                "time": time.strftime("%H:%M:%S"),
+            })
+            self.latest_stats["recent_warnings"] = self.latest_stats["recent_warnings"][:20]
+
+        if final_risk.level == 2:
+            self.m6_alert_output.trigger_level2(
+                tamper_id, final_risk, camera_id=self.camera_id,
+                behaviour_class=label, snapshot_bgr=display_frame.copy(),
+            )
+            self.latest_stats["recent_alerts"].insert(0, {
+                "track_id": tamper_id,
+                "risk_score": round(final_risk.score, 3),
+                "camera_id": self.camera_id,
+                "behaviour_class": label,
+                "triggered_rules": final_risk.triggered_rules,
+                "time": time.strftime("%H:%M:%S"),
+            })
+            self.latest_stats["recent_alerts"] = self.latest_stats["recent_alerts"][:20]
+
+        cv2.putText(display_frame, f"CAMERA TAMPER: {label}", (16, 34),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
         cv2.rectangle(display_frame, (4, 4),
                        (display_frame.shape[1] - 4, display_frame.shape[0] - 4), (0, 0, 255), 4)

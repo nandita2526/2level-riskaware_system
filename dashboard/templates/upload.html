@@ -1,30 +1,65 @@
 {% extends "base.html" %}
-{% block title %}Upload Video{% endblock %}
+{% block title %}Upload video{% endblock %}
 
 {% block content %}
 <div class="page-head">
-  <h1>UPLOAD VIDEO</h1>
-  <p>Analyze a recorded clip offline through the same two-level pipeline</p>
-</div>
-
-<div class="panel">
-  <div class="panel-body">
-    <div class="dropzone" id="dropzone">
-      <div class="icon">⇩</div>
-      <h3>Drop a video here, or click to browse</h3>
-      <p>MP4, AVI, MOV, MKV, WEBM</p>
-      <input type="file" id="fileInput" accept=".mp4,.avi,.mov,.mkv,.webm" multiple>
-    </div>
-
-    <div class="feed-controls" style="padding-left:0;padding-right:0;">
-      <input type="text" id="uploadCameraId" placeholder="Camera ID (optional)" style="max-width:220px;">
-    </div>
-
-    <div class="job-list" id="jobList"></div>
+  <div>
+    <h1>Upload video</h1>
+    <p>Analyze a recorded clip with the same two-level pipeline as the live feed. Alerts are marked on the timeline.</p>
+  </div>
+  <div class="page-actions">
+    <label class="sr-only" for="uploadCameraId">Camera ID (optional)</label>
+    <input type="text" id="uploadCameraId" placeholder="Camera ID (optional)" autocomplete="off"
+           title="Clips with the same Camera ID are grouped together in Analytics">
+    <button type="button" class="btn btn-primary" id="addVideoBtn">Add video</button>
   </div>
 </div>
+
+<input type="file" id="fileInput" accept=".mp4,.avi,.mov,.mkv,.webm" multiple hidden>
+
+<section class="workspace" aria-label="Video analysis workspace">
+  <div class="workspace-main">
+    <div class="ws-bar">
+      <h2 class="ws-title">
+        <span class="name" id="stageName">Preview</span>
+        <span class="pill" id="stagePill" hidden></span>
+      </h2>
+    </div>
+
+    <div id="uploadStage">
+      <button type="button" class="dz" id="dropzone" data-vs-slot="empty" aria-describedby="dzHint">
+        <span class="dz-title">Drop a video to analyze</span>
+        <span class="dz-sub" id="dzHint">MP4, MOV, AVI, MKV or WebM. Add several at once if you like.</span>
+        <span class="btn btn-primary dz-cta" aria-hidden="true">Choose a file</span>
+        <span class="dz-error" id="dzError" role="alert" hidden></span>
+      </button>
+      <div class="vs-drop" data-vs-slot="viewport" aria-hidden="true">Drop to analyze</div>
+    </div>
+
+    <dl class="meta-strip" id="metaStrip" hidden>
+      <div><dt>Duration</dt><dd id="metaDuration">—</dd></div>
+      <div><dt>Resolution</dt><dd id="metaResolution">—</dd></div>
+      <div><dt>Size</dt><dd id="metaSize">—</dd></div>
+      <div><dt>Camera ID</dt><dd id="metaCamera">—</dd></div>
+    </dl>
+  </div>
+
+  <aside class="workspace-rail" aria-label="Analysis queue and detections">
+    <section class="rail-section">
+      <h2 class="rail-title">Queue <span class="count" id="jobCount"></span></h2>
+      <ul class="job-list" id="jobList"></ul>
+      <p class="empty-row" id="jobEmpty">Nothing analyzed yet. Added videos appear here.</p>
+    </section>
+
+    <section class="rail-section grow">
+      <h2 class="rail-title">Detections <span class="count" id="detCount"></span></h2>
+      <div class="rail-scroll" id="detections" aria-live="polite"></div>
+    </section>
+  </aside>
+</section>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/video-stage.js') }}"></script>
 <script src="{{ url_for('static', filename='js/upload.js') }}"></script>
 {% endblock %}

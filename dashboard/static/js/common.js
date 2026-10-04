@@ -4,6 +4,46 @@ function prefersReducedMotion() {
   return window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+// Escapes text before it is interpolated into innerHTML (file names, alert
+// text and CSV fields all originate outside this page).
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// 83.4 -> "1:23", 3725 -> "1:02:05"
+function fmtTime(seconds) {
+  let t = Number(seconds);
+  if (!isFinite(t) || t < 0) t = 0;
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = Math.floor(t % 60);
+  const ss = String(s).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}
+
+function fmtBytes(n) {
+  n = Number(n);
+  if (!isFinite(n) || n <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)));
+  const v = n / Math.pow(1024, i);
+  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`;
+}
+
+// Reads a design token (e.g. "--accent") so canvas/Chart.js drawing stays in
+// sync with style.css instead of hard-coding colours in JS.
+function cssVar(name, fallback = "") {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+// "#6FA3EF", 0.4 -> "rgba(111,163,239,0.4)"
+function withAlpha(hex, alpha) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
 // Tweens the text content of `el` from its current numeric value to `target`.
 // opts: { decimals, duration, suffix }
 function animateNumber(el, target, opts = {}) {
@@ -48,6 +88,7 @@ function showToast(message, level = "info") {
   if (!root) return;
   const el = document.createElement("div");
   el.className = `toast ${level === "critical" ? "crit" : level === "warning" ? "warn" : ""}`;
+  el.setAttribute("role", level === "critical" ? "alert" : "status");
   el.textContent = message;
   root.appendChild(el);
   setTimeout(() => {
@@ -68,17 +109,17 @@ async function refreshHeaderStatus() {
     const data = await res.json();
     if (data.running) {
       dot.className = "status-dot ok";
-      text.textContent = "PIPELINE LIVE";
+      text.textContent = "Pipeline live";
       if (pulse) pulse.classList.add("live");
     } else {
       dot.className = "status-dot";
-      text.textContent = "IDLE";
+      text.textContent = "Idle";
       if (pulse) pulse.classList.remove("live");
     }
-    if (cam) cam.textContent = data.camera_id ? `CAM ${data.camera_id}` : "—";
+    if (cam) cam.textContent = data.camera_id || "";
   } catch (e) {
     dot.className = "status-dot err";
-    text.textContent = "OFFLINE";
+    text.textContent = "Offline";
     if (pulse) pulse.classList.remove("live");
   }
 }
@@ -165,10 +206,9 @@ const AlertAudio = (() => {
     const btn = document.getElementById("soundToggleBtn");
     if (!btn) return;
     btn.classList.toggle("on", enabled);
-    const icon = document.getElementById("soundToggleIcon");
+    btn.setAttribute("aria-pressed", String(enabled));
     const text = document.getElementById("soundToggleText");
-    if (icon) icon.textContent = enabled ? "🔊" : "🔈";
-    if (text) text.textContent = enabled ? "Sound: On" : "Sound: Off";
+    if (text) text.textContent = enabled ? "Sound on" : "Sound off";
   }
 
   document.addEventListener("DOMContentLoaded", () => {

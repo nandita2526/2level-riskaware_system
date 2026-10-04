@@ -37,6 +37,7 @@ RULE_LABELS = {
     "running": "Running",
     "crowd_density": "Crowd density",
     "scene_hazard": "Fire / explosion / blast detected",
+    "camera_tamper": "Camera view blocked / tampered",
 }
 
 

@@ -68,6 +68,14 @@ rule_engine:
     # normalised polygon [[x,y], ...] in 0..1 fractions of frame width/height
     polygon: [[0.70, 0.0], [1.0, 0.0], [1.0, 1.0], [0.70, 1.0]]
     score: 0.90                    # entering a restricted zone is treated as very severe
+    min_dwell_seconds: 0.8         # foot-point must stay inside the polygon continuously for
+                                    # this long before alerting — filters out single-frame bbox
+                                    # jitter / tracking noise at the zone boundary, which would
+                                    # otherwise fire an instant critical siren (score is above
+                                    # critical_rule_bypass_score below). Raise to 1.5-2.0 if you
+                                    # still see false alarms from people briefly grazing the edge
+                                    # of the zone; lower toward 0.3-0.5 if genuine entries feel slow
+                                    # to alert.
   running:
     enabled: true
     speed_px_per_sec_threshold: 260
@@ -107,6 +115,21 @@ rule_engine:
     flash_brightness_delta: 15         # OR: sudden avg-brightness jump vs previous frame
     motion_ratio_threshold: 0.12       # OR: fraction of frame that changed abruptly
     cooldown_seconds: 6                # avoid re-firing every processed frame while it persists
+    score: 0.95
+  camera_tamper:
+    # Lens covered / blocked / camera view closed. Runs on every frame
+    # unconditionally (like scene_hazard above) since a blocked camera
+    # produces zero detections, so no per-person rule could ever catch it.
+    enabled: true
+    dark_brightness_threshold: 25      # avg grayscale brightness (0-255); below this = lens
+                                        # covered by hand/cloth, lens cap on, or view is near-black
+    blur_variance_threshold: 15        # Laplacian (edge/texture) variance; below this = the frame
+                                        # has almost no detail at all, as when something is pressed
+                                        # directly against the lens or it's pointed at a blank surface
+    sustained_seconds: 2.0             # must stay "tampered-looking" continuously for this long
+                                        # before alerting — ignores a hand briefly waved across the
+                                        # lens or someone momentarily walking right in front of it
+    cooldown_seconds: 15               # avoid re-firing every frame while the camera stays blocked
     score: 0.95
 
 # ---------------- Stage 5: Two-Level Risk Scoring ----------------

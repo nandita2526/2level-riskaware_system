@@ -67,6 +67,9 @@ function renderTimeline(timeline) {
   const counts = (timeline || []).map(p => p.count);
 
   if (timelineChart) { timelineChart.destroy(); }
+  const accent = cssVar("--accent", "#6FA3EF");
+  const text3 = cssVar("--text-3", "#8A929D");
+  const mono = cssVar("--mono", "monospace").split(",")[0].replace(/['"]/g, "");
   timelineChart = new Chart(ctx, {
     type: "bar",
     data: {
@@ -74,8 +77,8 @@ function renderTimeline(timeline) {
       datasets: [{
         label: "Alerts",
         data: counts,
-        backgroundColor: "rgba(56,189,248,.55)",
-        hoverBackgroundColor: "#38BDF8",
+        backgroundColor: withAlpha(accent, 0.6),
+        hoverBackgroundColor: accent,
         borderRadius: 3,
         maxBarThickness: 18,
       }],
@@ -87,26 +90,27 @@ function renderTimeline(timeline) {
       scales: {
         x: {
           grid: { display: false },
-          ticks: { color: "#7C8896", font: { family: "JetBrains Mono", size: 10 } },
+          ticks: { color: text3, font: { family: mono, size: 10 } },
         },
         y: {
           beginAtZero: true,
-          grid: { color: "#232B34" },
-          ticks: { color: "#7C8896", font: { family: "JetBrains Mono", size: 10 }, precision: 0 },
+          grid: { color: "rgba(255,255,255,.06)" },
+          ticks: { color: text3, font: { family: mono, size: 10 }, precision: 0 },
         },
       },
     },
   });
 }
 
-function heatColor(count, max) {
-  if (!count) return "var(--panel-inset)";
+// Empty cells stay as the recessed well. Otherwise intensity is the accent at
+// rising opacity, and only the busiest cells turn to the danger colour — no
+// muddy blend between two hues (colours come from the design tokens).
+function heatStyle(count, max) {
+  if (!count) return "";
   const t = Math.min(1, count / Math.max(1, max));
-  // interpolate from dim cyan to hot red as intensity rises
-  const r = Math.round(56 + t * (248 - 56));
-  const g = Math.round(189 - t * (189 - 113));
-  const b = Math.round(248 - t * (248 - 113));
-  return `rgb(${r},${g},${b})`;
+  const hot = t >= 0.8;
+  const o = hot ? 1 : 0.3 + 0.7 * (t / 0.8);
+  return `background:var(${hot ? "--danger" : "--accent"});--o:${o.toFixed(2)};box-shadow:none;`;
 }
 
 function renderHeatmap(heatmap) {
@@ -121,18 +125,18 @@ function renderHeatmap(heatmap) {
 
   let html = `<table class="heatmap-table"><thead><tr><td></td>`;
   hourLabels.forEach((h, i) => {
-    html += `<td class="heatmap-row-label" style="text-align:center;">${i % 3 === 0 ? h : ""}</td>`;
+    html += `<td class="heatmap-hour">${i % 3 === 0 ? h : ""}</td>`;
   });
   html += `</tr></thead><tbody>`;
 
   let cellIndex = 0;
   heatmap.forEach(row => {
-    html += `<tr><td class="heatmap-row-label">${row.camera_id}</td>`;
+    html += `<tr><td class="heatmap-row-label">${esc(row.camera_id)}</td>`;
     row.hours.forEach(h => {
       const delay = Math.min(cellIndex * 3, 600);
       html += `<td>
-        <div class="heatmap-cell" title="${row.camera_id} · ${h.hour}:00 · ${h.count} alerts"
-             style="background:${heatColor(h.count, maxCount)};animation-delay:${delay}ms"></div>
+        <div class="heatmap-cell" title="${esc(row.camera_id)}, ${h.hour}:00, ${h.count} alert${h.count === 1 ? "" : "s"}"
+             style="${heatStyle(h.count, maxCount)}animation-delay:${delay}ms"></div>
       </td>`;
       cellIndex++;
     });

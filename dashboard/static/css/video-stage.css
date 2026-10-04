@@ -1,0 +1,245 @@
+/* ==========================================================================
+   VideoStage — one component for the live feed, uploaded clips and the
+   evidence viewer. Markup is built by js/video-stage.js.
+
+   Framing model
+   -------------
+   .vs-frame is the screen. Its aspect ratio (--ar) is set from the media's
+   real dimensions, so in Fit mode the box *is* the video: no bars, no
+   stretching, portrait stays portrait. Width is capped so the frame never
+   grows taller than --stage-max-h. In Fill mode the frame takes a fixed
+   cinematic ratio and the media is cropped to cover it.
+   ========================================================================== */
+.vs{
+  --stage-max-h:min(68vh,780px);
+  --vs-pad:clamp(10px,2.2vw,20px);
+  --ar:1.7778;
+  --thumb:14px;
+  position:relative;display:flex;flex-direction:column;min-width:0;
+}
+@supports (height:1dvh){ .vs{--stage-max-h:min(68dvh,780px);} }
+
+/* the well: a recessed monitor bay the screen floats above */
+.vs-viewport{
+  position:relative;display:grid;place-items:center;
+  padding:var(--vs-pad);min-height:var(--vs-min-h,0);
+  background:var(--surface-well);box-shadow:var(--shadow-well);outline-offset:-3px;
+}
+.vs[data-state="empty"] .vs-viewport{min-height:clamp(300px,50vh,540px);}
+
+.vs-frame{
+  position:relative;overflow:hidden;
+  width:min(100%,calc(var(--stage-max-h) * var(--ar)));
+  aspect-ratio:var(--ar);
+  background:#000;border-radius:var(--r-xs);
+  box-shadow:0 0 0 1px rgba(255,255,255,.07),0 2px 4px rgba(0,0,0,.5),0 22px 44px -12px rgba(0,0,0,.85);
+  transition:width .28s var(--ease-out),aspect-ratio .28s var(--ease-out),opacity .2s var(--ease);
+}
+.vs[data-state="empty"] .vs-frame{display:none;}
+.vs[data-state="loading"] .vs-frame{opacity:.55;}
+.vs[data-state="error"] .vs-frame{opacity:.35;}
+
+/* uploading a clip: the empty slot gives way and the screen rises into place */
+.vs[data-state="ready"] .vs-frame,.vs[data-state="loading"] .vs-frame{animation:vs-rise .38s var(--ease-out) both;}
+@keyframes vs-rise{
+  from{opacity:0;transform:perspective(1200px) translateY(10px) rotateX(2.5deg) scale(.985);}
+  to{opacity:1;transform:none;}
+}
+
+.vs-media{
+  position:absolute;inset:0;display:block;width:100%;height:100%;
+  object-fit:contain;background:#000;
+  transform-origin:50% 50%;will-change:transform;
+  -webkit-user-drag:none;user-select:none;
+}
+.vs[data-fit="fill"] .vs-media{object-fit:cover;}
+.vs.is-zoomed .vs-viewport{touch-action:none;}
+.vs.is-zoomed .vs-frame{cursor:grab;}
+.vs.is-panning .vs-frame{cursor:grabbing;}
+.vs[data-kind="video"][data-state="ready"]:not(.is-zoomed) .vs-frame{cursor:pointer;}
+
+/* empty slot and drag target */
+.vs-empty{display:none;place-self:stretch;}
+.vs[data-state="empty"] .vs-empty{display:grid;}
+.vs-drop{
+  position:absolute;inset:8px;z-index:6;display:grid;place-items:center;
+  border:2px dashed var(--accent);border-radius:var(--r-md);
+  background:rgba(111,163,239,.10);color:var(--accent);font-size:15px;font-weight:600;
+  opacity:0;pointer-events:none;transform:scale(.99);
+  transition:opacity .15s var(--ease),transform .2s var(--ease-out);
+}
+.vs.is-dragging .vs-drop{opacity:1;transform:none;}
+.vs.is-dragging .dz{border-color:var(--accent);background:rgba(111,163,239,.08);transform:scale(1.01);}
+
+/* loading / buffering / error */
+.vs-state{
+  position:absolute;inset:0;z-index:5;display:grid;place-content:center;justify-items:center;gap:10px;
+  padding:24px;text-align:center;pointer-events:none;
+}
+.vs-state[hidden]{display:none;}
+.vs-state-text{font-size:13px;color:var(--text-2);max-width:44ch;}
+.vs-state-title{font-size:15px;font-weight:600;color:var(--text);}
+.vs-error{display:grid;gap:8px;justify-items:center;padding:18px 22px;max-width:480px;
+  background:rgba(21,24,28,.92);border:1px solid var(--line-strong);border-radius:var(--r-md);box-shadow:var(--shadow-3);}
+.vs-state-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:6px;pointer-events:auto;}
+.vs-spinner{
+  width:26px;height:26px;border-radius:50%;
+  border:3px solid rgba(255,255,255,.12);border-top-color:var(--accent);
+  animation:vs-spin .7s linear infinite;
+}
+.vs-state[data-kind="buffer"] .vs-spinner{width:20px;height:20px;border-width:2px;}
+@keyframes vs-spin{to{transform:rotate(360deg);}}
+
+/* source switching on the live feed: a single sheen pass over the frame */
+.vs-frame.switching::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.10) 50%,transparent 70%);
+  background-size:200% 100%;animation:skeleton-sheen 1s linear infinite;
+}
+/* critical tier on the live feed: a red ring, not a flashing box */
+.vs-frame.alert-critical{box-shadow:0 0 0 2px var(--danger),0 0 28px rgba(238,107,107,.35),0 22px 44px -12px rgba(0,0,0,.85);}
+
+/* floating view controls: framing, zoom, fullscreen. They stay out of the way
+   until the pointer or keyboard is near, and are always visible on touch. */
+.vs-tools{
+  position:absolute;top:10px;right:10px;z-index:8;display:flex;align-items:center;gap:6px;
+  padding:4px;border-radius:var(--r-md);
+  background:rgba(21,24,28,.92);border:1px solid var(--line-strong);box-shadow:var(--shadow-2);
+  opacity:0;transform:translateY(-3px);pointer-events:none;
+  transition:opacity .15s var(--ease),transform .2s var(--ease-out);
+}
+.vs[data-state="ready"]:hover .vs-tools,
+.vs[data-state="ready"]:focus-within .vs-tools,
+.vs[data-state="ready"][data-paused="1"] .vs-tools,
+.vs[data-state="ready"][data-fs="1"] .vs-tools:hover{opacity:1;transform:none;pointer-events:auto;}
+/* touch: tools appear when paused or tapped (tap focuses the stage); the live
+   stream can't pause, so there they stay visible */
+@media (hover:none){ .vs[data-state="ready"][data-kind="stream"] .vs-tools{opacity:1;transform:none;pointer-events:auto;} }
+.vs-tools .seg{padding:2px;box-shadow:none;background:rgba(0,0,0,.35);}
+.vs-tools .seg-btn{min-height:calc(var(--hit) - 10px);}
+.tool-group{display:flex;align-items:center;}
+.tool-btn{
+  display:inline-grid;place-items:center;min-width:calc(var(--hit) - 6px);height:calc(var(--hit) - 6px);padding:0 6px;
+  color:var(--text-2);font:500 13px var(--font);background:transparent;border:0;border-radius:var(--r-xs);
+  transition:background .12s var(--ease),color .12s var(--ease);
+}
+.tool-btn:hover:not(:disabled){background:var(--surface-3);color:var(--text);}
+.tool-btn:active:not(:disabled){transform:translateY(1px);}
+.tool-btn:disabled{opacity:.35;cursor:default;}
+.tool-btn.zoom-val{min-width:46px;font-family:var(--mono);font-size:12px;}
+
+/* transport: docked under the screen, never over it, so the controls stay
+   reachable for portrait, square and ultra-wide video alike */
+.vs-transport{
+  position:sticky;bottom:0;z-index:7;display:grid;gap:4px;padding:8px 14px 10px;
+  background:var(--surface-2);border-top:1px solid var(--line);
+}
+.vs[data-kind="stream"] .vs-transport,
+.vs[data-state="empty"] .vs-transport,
+.vs[data-state="error"] .vs-transport{display:none;}
+.vs[data-state="loading"] .vs-transport{opacity:.55;pointer-events:none;}
+
+.vs-seek-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;}
+.vs-time{font:500 12px/1 var(--mono);color:var(--text-2);min-width:4.2ch;}
+.vs-time.end{text-align:right;}
+.vs-seek{--seek-h:28px;position:relative;height:var(--seek-h);display:flex;align-items:center;}
+@media (pointer:coarse){ .vs-seek{--seek-h:40px;} .vs{--thumb:18px;} }
+.vs-track,.vs-markers{position:absolute;left:calc(var(--thumb) / 2);right:calc(var(--thumb) / 2);top:50%;pointer-events:none;}
+.vs-track{
+  height:6px;transform:translateY(-50%);border-radius:3px;overflow:hidden;
+  background:var(--surface-well);box-shadow:inset 0 1px 3px rgba(0,0,0,.7),0 1px 0 rgba(255,255,255,.05);
+}
+.vs-buffered,.vs-played{position:absolute;inset:0 auto 0 0;}
+.vs-buffered{width:var(--b,0%);background:rgba(255,255,255,.10);}
+.vs-played{width:var(--p,0%);background:var(--accent);box-shadow:0 1px 0 rgba(255,255,255,.28) inset;}
+.vs-markers{height:0;}
+.vs-marker{
+  position:absolute;left:calc(var(--m) * 1%);top:-7px;width:3px;height:14px;margin-left:-1.5px;border-radius:2px;
+  background:var(--warn);box-shadow:0 0 0 1px rgba(0,0,0,.55);
+}
+.vs-marker.l2{background:var(--danger);}
+
+.vs-range{
+  -webkit-appearance:none;appearance:none;position:relative;z-index:2;
+  width:100%;height:100%;margin:0;background:transparent;cursor:pointer;
+}
+.vs-range:focus{outline:none;}
+.vs-range:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-xs);}
+.vs-range::-webkit-slider-runnable-track{background:transparent;height:100%;}
+.vs-range::-moz-range-track{background:transparent;height:100%;}
+.vs-range::-webkit-slider-thumb{
+  -webkit-appearance:none;width:var(--thumb);height:var(--thumb);margin-top:calc((var(--seek-h) - var(--thumb)) / 2);
+  border-radius:50%;border:1px solid rgba(0,0,0,.45);
+  background:linear-gradient(180deg,#F4F6F9,#C7CDD6);
+  box-shadow:0 1px 0 rgba(255,255,255,.7) inset,0 2px 5px rgba(0,0,0,.55);
+  transition:transform .12s var(--ease);
+}
+.vs-range::-moz-range-thumb{
+  width:var(--thumb);height:var(--thumb);border-radius:50%;border:1px solid rgba(0,0,0,.45);
+  background:linear-gradient(180deg,#F4F6F9,#C7CDD6);box-shadow:0 1px 0 rgba(255,255,255,.7) inset,0 2px 5px rgba(0,0,0,.55);
+}
+.vs-range:active::-webkit-slider-thumb{transform:scale(1.15);}
+.vs-range:disabled{cursor:default;opacity:.5;}
+
+.vs-hover{
+  position:absolute;bottom:calc(100% - 2px);left:var(--hx,0);transform:translateX(-50%);
+  padding:4px 7px;border-radius:var(--r-xs);background:#0B0D10;border:1px solid var(--line-strong);
+  font:500 11px/1 var(--mono);color:var(--text);pointer-events:none;opacity:0;transition:opacity .1s;z-index:4;
+}
+.vs-seek:hover .vs-hover,.vs-seek.is-scrubbing .vs-hover{opacity:1;}
+
+.vs-controls{display:flex;align-items:center;gap:6px;}
+.vs-controls .grow{flex:1;}
+.ctl{
+  --edge:#0F1114;
+  display:inline-grid;place-items:center;min-width:var(--hit);height:var(--hit);padding:0 8px;
+  color:var(--text);font:500 12.5px var(--font);
+  background:linear-gradient(180deg,#363D46,#2C323A);
+  border:1px solid rgba(255,255,255,.08);border-top-color:rgba(255,255,255,.14);border-radius:var(--r-sm);
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset,0 2px 0 var(--edge),0 3px 6px rgba(0,0,0,.3);
+  transition:transform .1s var(--ease),box-shadow .1s var(--ease);
+}
+.ctl:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 3px 0 var(--edge),0 6px 10px rgba(0,0,0,.34);}
+.ctl:active:not(:disabled){transform:translateY(2px);box-shadow:0 1px 0 rgba(255,255,255,.04) inset,0 0 0 var(--edge);}
+.ctl:disabled{opacity:.45;cursor:default;}
+.ctl-play{--edge:var(--accent-edge);min-width:calc(var(--hit) + 12px);color:var(--accent-ink);
+  border-color:rgba(255,255,255,.18);border-top-color:rgba(255,255,255,.35);background:linear-gradient(180deg,#82B0F2,#66A0EE);}
+.ctl-flat{--edge:transparent;background:transparent;border-color:transparent;box-shadow:none;color:var(--text-2);}
+.ctl-flat:hover:not(:disabled){background:var(--surface-3);color:var(--text);box-shadow:none;transform:none;}
+.ctl-flat:active:not(:disabled){transform:translateY(1px);box-shadow:none;}
+.ctl-speed{min-width:46px;font-family:var(--mono);font-size:12px;}
+
+.vs-volume{display:flex;align-items:center;gap:4px;}
+.vs-vol{
+  --v:100%;-webkit-appearance:none;appearance:none;width:84px;height:6px;border-radius:3px;margin:0 6px 0 0;cursor:pointer;
+  background:linear-gradient(90deg,var(--text-2) var(--v),var(--surface-well) var(--v));
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.6);
+}
+.vs-vol::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;border-radius:50%;background:linear-gradient(180deg,#F4F6F9,#C7CDD6);border:1px solid rgba(0,0,0,.45);box-shadow:0 2px 4px rgba(0,0,0,.5);}
+.vs-vol::-moz-range-thumb{width:12px;height:12px;border-radius:50%;background:#E3E7ED;border:1px solid rgba(0,0,0,.45);}
+@media (pointer:coarse){ .vs-vol{display:none;} }
+
+/* fullscreen: the whole stage (screen + transport) goes, so controls survive */
+.vs:fullscreen,.vs:-webkit-full-screen{
+  --stage-max-h:calc(100vh - 150px);
+  width:100vw;height:100vh;background:var(--surface-0);
+}
+.vs:fullscreen .vs-viewport,.vs:-webkit-full-screen .vs-viewport{flex:1;min-height:0;}
+.vs:fullscreen .vs-transport,.vs:-webkit-full-screen .vs-transport{position:static;}
+
+@media (max-width:700px){
+  .vs{--vs-pad:8px;--stage-max-h:min(62vh,640px);}
+  .vs-transport{padding:8px 10px 10px;}
+  .vs-seek-row{gap:8px;}
+  .vs-tools{top:6px;right:6px;gap:2px;}
+}
+@media (max-width:420px){
+  .vs-controls .ctl-speed{display:none;}
+}
+
+/* zoom eases in; while dragging to pan it must follow the pointer exactly */
+.vs-media{transition:transform .18s var(--ease-out);}
+.vs.is-panning .vs-media{transition:none;}
+
+/* with no transport under it, the bay itself closes the slab's rounded corner */
+.vs[data-state="empty"] .vs-viewport{border-bottom-left-radius:var(--r-lg);}

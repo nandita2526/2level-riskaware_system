@@ -142,6 +142,28 @@ python notifications/mock_server.py
 
 No extra setup needed beyond the base `pip install -r requirements.txt` — Flask is already included.
 
+### Front-end structure
+
+The dashboard is server-rendered Jinja templates with vanilla JS (no build step, no new dependencies).
+
+| File | Role |
+|---|---|
+| `dashboard/static/css/style.css` | Design tokens (surfaces, one accent, status colours, elevation) and shared components |
+| `dashboard/static/css/video-stage.css` | Styles for the video component |
+| `dashboard/static/js/video-stage.js` | `VideoStage` — one component for the live feed, uploaded clips and the Evidence Viewer |
+| `dashboard/static/js/common.js` | Header status, toasts, alert audio, shared helpers (`esc`, `fmtTime`, `cssVar`) |
+
+`VideoStage` reads the media's real dimensions and sizes its frame to match, so portrait, square and
+landscape video are never stretched. **Fit** shows the whole frame; **Fill** crops to a cinematic frame.
+It also provides zoom/pan, fullscreen, frame stepping, playback speed and keyboard shortcuts
+(Space/K play, ←/→ ±5 s, J/L ±10 s, `,` `.` frame step, M mute, F fullscreen, V fit/fill, + − 0 zoom).
+On the Upload page, alerts from the analysis are drawn as markers on the seek bar and each detection
+jumps the player to that moment.
+
+`GET /api/upload/<job_id>/video` streams an uploaded clip back (with range support) so past uploads
+stay playable after a refresh. Browsers can't decode every codec: OpenCV's `mp4v` clips, and many
+AVI/MKV files, show a clear "can't preview" state with a download link. Analysis is unaffected.
+
 ## 4. Level-1 Rule Engine (Module 4A)
 
 Pure, deterministic checks over YOLO+ByteTrack detections — **no neural network** runs here.

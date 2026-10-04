@@ -1,0 +1,129 @@
+/* ==========================================================================
+   Riskwatch — 3D depth layer (loads AFTER style.css / video-stage.css)
+   Glass surfaces, animated perspective floor, tilt + glare cards.
+   Remove this file + js/depth3d.js + the 3 lines in base.html to go back.
+   ========================================================================== */
+:root{
+  --surface-0:#0B0E14; --surface-1:#10141C; --surface-2:#161B26; --surface-3:#202736;
+  --glass-a:rgba(38,47,66,.72); --glass-b:rgba(20,25,36,.78);
+  --glass-edge:rgba(255,255,255,.10);
+  --glow:0 0 0 1px rgba(111,163,239,.10),0 18px 50px -18px rgba(111,163,239,.35);
+  --px:0; --py:0;
+}
+
+/* animated scene sits behind everything */
+#scene{position:fixed;inset:0;z-index:-1;pointer-events:none;display:block;}
+body{
+  background:
+    radial-gradient(900px 520px at calc(18% + var(--px)*40px) calc(-6% + var(--py)*24px),rgba(111,163,239,.16),transparent 70%),
+    radial-gradient(800px 480px at calc(86% - var(--px)*40px) calc(8% - var(--py)*20px),rgba(167,125,240,.12),transparent 70%),
+    linear-gradient(180deg,#0B0E14,#0A0C12) !important;
+  background-attachment:fixed !important;
+}
+.page{position:relative;perspective:1600px;}
+
+/* header: frosted glass */
+.console-header{
+  background:linear-gradient(180deg,rgba(24,30,42,.82),rgba(14,18,26,.80));
+  backdrop-filter:blur(16px) saturate(150%);-webkit-backdrop-filter:blur(16px) saturate(150%);
+  border-bottom:1px solid var(--glass-edge);
+}
+.brand-mark{transition:transform .6s var(--ease-out);transform-style:preserve-3d;}
+.brand:hover .brand-mark{transform:rotateY(360deg) rotateX(12deg);}
+.brand-name{background:linear-gradient(90deg,#fff,#9CC2F7);-webkit-background-clip:text;background-clip:text;color:transparent;}
+
+/* tabs: the active one is an extruded key */
+.tabs{perspective:600px;}
+.tab{transition:transform .18s var(--ease-out),color .15s,background .15s,box-shadow .15s;transform-style:preserve-3d;}
+.tab:hover{transform:translateY(-1px) translateZ(6px);}
+.tab.active{
+  background:linear-gradient(180deg,#3A5C94,#2B4676);
+  border-color:rgba(255,255,255,.16);
+  box-shadow:0 1px 0 rgba(255,255,255,.22) inset,0 3px 0 #1B2E50,0 8px 16px -4px rgba(111,163,239,.55);
+  transform:translateY(-2px) translateZ(8px);
+}
+
+/* page titles: soft extrusion */
+.page-head h1{
+  font-size:24px;
+  background:linear-gradient(180deg,#fff 30%,#8FB4EA);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 2px 0 rgba(8,12,20,.9)) drop-shadow(0 8px 14px rgba(111,163,239,.25));
+}
+
+/* ---- glass slabs ------------------------------------------------------- */
+.workspace,.panel,.stat-strip .kpi-card,.incident-card,.modal{
+  background:linear-gradient(150deg,var(--glass-a),var(--glass-b)) !important;
+  border:1px solid var(--glass-edge) !important;
+  box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 2px 4px rgba(0,0,0,.35),0 24px 48px -18px rgba(0,0,0,.75),var(--glow);
+}
+.panel,.stat-strip .kpi-card,.incident-card{backdrop-filter:blur(12px) saturate(140%);-webkit-backdrop-filter:blur(12px) saturate(140%);}
+.workspace{box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 40px 80px -30px rgba(0,0,0,.85),0 0 90px -30px rgba(111,163,239,.30);}
+.workspace-rail{background:rgba(10,13,20,.35);border-left:1px solid var(--glass-edge);border-radius:0 var(--r-lg) var(--r-lg) 0;}
+
+/* KPI strip: separate floating tiles instead of one divided bar */
+.stat-strip{background:none !important;border:0 !important;box-shadow:none !important;gap:14px;}
+.stat-strip .kpi-card{border-radius:var(--r-lg);padding:16px 20px;border-left:1px solid var(--glass-edge) !important;}
+.kpi-card .v{text-shadow:0 0 22px currentColor;}
+.kpi-card.accent .v,.kpi-card.warn .v,.kpi-card.crit .v{filter:saturate(1.2);}
+.kpi-card.crit{box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 24px 48px -18px rgba(0,0,0,.75),0 0 40px -14px rgba(238,107,107,.45);}
+
+/* tier counters become raised tiles */
+.tier-cards{gap:10px;}
+.tier-card{
+  padding:10px 12px !important;border:1px solid var(--glass-edge) !important;border-radius:var(--r-md);
+  background:linear-gradient(160deg,rgba(255,255,255,.06),rgba(255,255,255,.015));
+  box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 6px 14px -6px rgba(0,0,0,.7);
+}
+.tier-card.crit{box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 6px 18px -6px rgba(238,107,107,.55);}
+.tier-card.warn{box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 6px 18px -6px rgba(232,176,75,.40);}
+.tier-card.safe{box-shadow:0 1px 0 rgba(255,255,255,.08) inset,0 6px 18px -6px rgba(76,195,138,.40);}
+
+/* ---- tilt + glare ------------------------------------------------------- */
+.kpi-card,.tier-card,.incident-card,.panel,.job-select{
+  position:relative;transform-style:preserve-3d;
+  transition:transform .45s var(--ease-out),box-shadow .3s var(--ease);
+  will-change:transform;
+}
+.is-tilting{transition:transform .08s linear,box-shadow .3s var(--ease) !important;z-index:3;}
+.kpi-card .v,.kpi-card .l,.tier-card .n,.tier-card .lbl,.incident-card .incident-top{transform:translateZ(26px);}
+.glare{
+  position:absolute;inset:0;border-radius:inherit;pointer-events:none;opacity:0;z-index:2;
+  background:radial-gradient(380px circle at var(--mx,50%) var(--my,50%),rgba(255,255,255,.16),transparent 55%);
+  transition:opacity .25s var(--ease);mix-blend-mode:soft-light;
+}
+.is-tilting>.glare{opacity:1;}
+
+/* ---- entrances ---------------------------------------------------------- */
+.stagger-in{animation-fill-mode:backwards !important;}
+.stat-strip .kpi-card{animation:depth-in .65s var(--ease-out) backwards;}
+.stat-strip .kpi-card:nth-child(2){animation-delay:.06s;}
+.stat-strip .kpi-card:nth-child(3){animation-delay:.12s;}
+.stat-strip .kpi-card:nth-child(4){animation-delay:.18s;}
+.stat-strip .kpi-card:nth-child(5){animation-delay:.24s;}
+.workspace,.chart-grid .panel{animation:depth-in .8s var(--ease-out) backwards;}
+@keyframes depth-in{
+  from{opacity:0;transform:perspective(1200px) translateY(26px) translateZ(-120px) rotateX(14deg);}
+  to{opacity:1;transform:none;}
+}
+
+/* modal flips up out of the screen */
+.modal-backdrop{perspective:1400px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
+.modal{animation:modal-3d .5s var(--ease-out) both;transform-origin:50% 100%;}
+@keyframes modal-3d{
+  from{opacity:0;transform:translateZ(-200px) rotateX(-18deg) scale(.94);}
+  to{opacity:1;transform:none;}
+}
+
+/* critical alerts: glowing edge on the whole workspace */
+.crit-vignette.show~.page .workspace{box-shadow:0 0 0 1px rgba(238,107,107,.5),0 0 80px -10px rgba(238,107,107,.55);}
+
+/* accessibility / small screens */
+@media (prefers-reduced-motion:reduce){
+  .stat-strip .kpi-card,.workspace,.chart-grid .panel,.modal{animation:none !important;}
+  .kpi-card,.tier-card,.incident-card,.panel,.job-select{transition:none;}
+  #scene{display:none;}
+}
+@media (max-width:760px),(hover:none){
+  .kpi-card .v,.kpi-card .l,.tier-card .n,.tier-card .lbl,.incident-card .incident-top{transform:none;}
+  .glare{display:none;}
+}

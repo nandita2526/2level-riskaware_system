@@ -54,11 +54,24 @@ class _TrackHistory:
     bbox_history: deque = field(default_factory=lambda: deque(maxlen=30))  # (t, w, h)
     first_seen: float = None
     anchor: tuple = None          # centroid the loitering timer is anchored to
+    zone_entry_time: float = None  # timestamp this track's foot-point first entered the restricted zone (None = currently outside)
 
 
 def _centroid(bbox):
     x1, y1, x2, y2 = bbox
     return ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+
+
+def _foot_point(bbox):
+    """Bottom-center of the bbox — approximates where the person's feet
+    touch the ground. Used for the restricted-zone check instead of the
+    full-box centroid: the centroid sits around hip/chest height, so a
+    person standing just outside the zone can still flicker the centroid
+    in/out of the polygon on bbox-height jitter alone. The foot point is
+    far more stable and matches how a "zone" is normally understood
+    (a region of floor/ground), which cuts false zone-entry triggers."""
+    x1, y1, x2, y2 = bbox
+    return ((x1 + x2) / 2.0, y2)
 
 
 def _dist(p1, p2):
@@ -105,6 +118,10 @@ class RuleEngineModule:
         self._scene_prev_brightness = None
         self._scene_last_alert_time = None
 
+        # --- camera_tamper (lens covered / blocked / obstructed) state ---
+        self._tamper_bad_since = None     # timestamp the frame first started looking tampered (None = currently fine)
+        self._tamper_last_alert_time = None
+
     # ------------------------------------------------------------------
     def evaluate(self, persons: list, objects: list, frame_shape: tuple,
                  timestamp: float = None) -> Dict[int, RuleResult]:
@@ -134,7 +151,7 @@ class RuleEngineModule:
                     scores.append(self.cfg.loitering.score)
 
             if self._zone_polygon is not None:
-                s = self._check_restricted_zone(det, w, h)
+                s = self._check_restricted_zone(det, w, h, timestamp)
                 if s:
                     triggered.append("restricted_zone")
                     scores.append(self.cfg.restricted_zone.score)
@@ -227,6 +244,62 @@ class RuleEngineModule:
         return RuleResult(score=cfg.score, triggered_rules=["scene_hazard"])
 
     # ------------------------------------------------------------------
+    # Camera tamper check (lens covered / blocked / obstructed / view closed)
+    # ------------------------------------------------------------------
+    def evaluate_camera_tamper(self, frame_bgr, timestamp: float = None) -> RuleResult:
+        """
+        Detects the camera view itself being blocked — a hand or cloth over
+        the lens, the camera pointed at a wall, or someone physically closing
+        off the view. Like evaluate_scene(), this is a whole-frame check with
+        no associated person track, and is called unconditionally on every
+        processed frame (even when zero persons/objects are detected — a
+        covered lens produces exactly zero detections, so no per-track rule
+        could ever catch this).
+
+        Two cheap signals on a downscaled grayscale frame:
+          1. brightness  — a covered lens (hand/cloth) or camera aimed into
+                            near-total darkness reads as very low average
+                            brightness.
+          2. texture     — a covered/pressed-against lens also has almost no
+                            edge detail (Laplacian variance ~0), unlike a real
+                            scene (even a dark room has *some* texture/noise).
+        Either signal alone can have false positives (a genuinely dark room
+        at night; a plain, evenly-lit wall in frame); requiring the bad
+        state to persist for `sustained_seconds` filters out a hand briefly
+        waved in front of the lens or someone momentarily blocking it while
+        walking past.
+        """
+        cfg = getattr(self.cfg, "camera_tamper", None)
+        if cfg is None or not getattr(cfg, "enabled", False):
+            return RuleResult(score=0.0, triggered_rules=[])
+        timestamp = timestamp if timestamp is not None else time.time()
+
+        small = cv2.resize(frame_bgr, (160, 120))
+        gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+        brightness = float(gray.mean())
+        texture = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+        looks_tampered = (brightness <= cfg.dark_brightness_threshold or
+                           texture <= cfg.blur_variance_threshold)
+
+        if not looks_tampered:
+            self._tamper_bad_since = None
+            return RuleResult(score=0.0, triggered_rules=[])
+
+        if self._tamper_bad_since is None:
+            self._tamper_bad_since = timestamp
+
+        if (timestamp - self._tamper_bad_since) < cfg.sustained_seconds:
+            return RuleResult(score=0.0, triggered_rules=[])
+
+        if self._tamper_last_alert_time is not None and \
+                (timestamp - self._tamper_last_alert_time) < cfg.cooldown_seconds:
+            return RuleResult(score=0.0, triggered_rules=[])
+        self._tamper_last_alert_time = timestamp
+
+        return RuleResult(score=cfg.score, triggered_rules=["camera_tamper"])
+
+    # ------------------------------------------------------------------
     # History bookkeeping
     # ------------------------------------------------------------------
     def _update_histories(self, persons, objects, timestamp):
@@ -283,10 +356,30 @@ class RuleEngineModule:
 
         return (timestamp - hist.first_seen) >= cfg.seconds_threshold
 
-    def _check_restricted_zone(self, det, frame_w: int, frame_h: int) -> bool:
-        cx, cy = _centroid(det.bbox)
-        norm_point = (cx / max(frame_w, 1), cy / max(frame_h, 1))
-        return _point_in_polygon(norm_point, self._zone_polygon)
+    def _check_restricted_zone(self, det, frame_w: int, frame_h: int, timestamp: float) -> bool:
+        """Requires the person's foot-point to be continuously inside the
+        polygon for `min_dwell_seconds` before triggering (instead of firing
+        on the very first frame a noisy detection lands inside the zone).
+        This rule's score is high enough to bypass AI confirmation and fire
+        an instant siren (see config.yaml critical_rule_bypass), so it's
+        especially important that single-frame noise can't trigger it —
+        without the dwell requirement, one jittery bbox at the zone edge is
+        enough to sound a false critical alarm."""
+        cfg = self.cfg.restricted_zone
+        hist = self._persons[det.track_id]
+        fx, fy = _foot_point(det.bbox)
+        norm_point = (fx / max(frame_w, 1), fy / max(frame_h, 1))
+
+        if not _point_in_polygon(norm_point, self._zone_polygon):
+            hist.zone_entry_time = None
+            return False
+
+        if hist.zone_entry_time is None:
+            hist.zone_entry_time = timestamp
+            return False
+
+        min_dwell = getattr(cfg, "min_dwell_seconds", 0.0)
+        return (timestamp - hist.zone_entry_time) >= min_dwell
 
     def _check_running(self, det, timestamp: float) -> bool:
         cfg = self.cfg.running

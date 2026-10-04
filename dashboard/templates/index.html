@@ -1,69 +1,73 @@
 {% extends "base.html" %}
-{% block title %}Live Camera{% endblock %}
+{% block title %}Live camera{% endblock %}
 
 {% block content %}
 <div class="page-head">
-  <h1>LIVE CAMERA</h1>
-  <p>Real-time annotated feed · per-person risk tracking · Level-1 / Level-2 alert console</p>
+  <div>
+    <h1>Live camera</h1>
+    <p>Annotated feed with per-person risk tracking and the Level 1 / Level 2 alert console.</p>
+  </div>
 </div>
 
-<div class="live-grid">
-  <div class="panel">
-    <div class="hud-frame" id="hudFrame">
-      <img src="/video_feed" alt="Live camera feed" id="feedImg">
-      <div class="hud-corner tl"></div>
-      <div class="hud-corner tr"></div>
-      <div class="hud-corner bl"></div>
-      <div class="hud-corner br"></div>
-      <div class="hud-readout">
-        <span>FPS <b id="hudFps">—</b></span>
-        <span>UPTIME <b id="hudUptime">—</b>s</span>
-        <span>FRAME <b id="hudFrames">—</b></span>
+<section class="workspace" aria-label="Live camera workspace">
+  <div class="workspace-main">
+    <div class="ws-bar">
+      <h2 class="ws-title">Camera feed <span class="ws-sub" id="hudCamera"></span></h2>
+      <div class="readouts" aria-label="Pipeline readouts">
+        <span>FPS<b id="hudFps">—</b></span>
+        <span>Uptime<b id="hudUptime">—</b>s</span>
+        <span>Frames<b id="hudFrames">—</b></span>
       </div>
-      <div class="risk-gauge-group" id="riskGaugeGroup">
-        <svg class="risk-gauge" width="56" height="56" viewBox="0 0 56 56">
+    </div>
+
+    <div id="liveStage">
+      <div class="risk-gauge-group" id="riskGaugeGroup" data-vs-slot="frame" role="img" aria-label="Current peak risk">
+        <svg class="risk-gauge" width="58" height="58" viewBox="0 0 56 56" aria-hidden="true">
           <circle class="risk-gauge-track" cx="28" cy="28" r="22"></circle>
           <circle class="risk-gauge-fill" id="riskGaugeFill" cx="28" cy="28" r="22"
                   stroke-dasharray="138.2" stroke-dashoffset="138.2"></circle>
         </svg>
-        <div class="risk-gauge-text"><span class="v" id="riskGaugeVal">0.00</span><span class="l">RISK</span></div>
+        <div class="risk-gauge-text"><span class="v" id="riskGaugeVal">0.00</span><span class="l">risk</span></div>
       </div>
     </div>
-    <div class="feed-controls">
-      <input type="text" id="sourceInput" placeholder="Webcam index (0), video path, or RTSP URL">
-      <input type="text" id="cameraIdInput" placeholder="Camera ID" style="max-width:140px;">
-      <button class="btn btn-primary" id="switchSourceBtn">Switch Source</button>
-    </div>
+
+    <form class="source-bar" id="sourceForm" onsubmit="return false;">
+      <label class="sr-only" for="sourceInput">Video source</label>
+      <input type="text" id="sourceInput" placeholder="Webcam index (0), video path, or RTSP URL" autocomplete="off">
+      <label class="sr-only" for="cameraIdInput">Camera ID</label>
+      <input type="text" id="cameraIdInput" class="narrow" placeholder="Camera ID" autocomplete="off">
+      <button type="button" class="btn btn-primary" id="switchSourceBtn">Switch source</button>
+    </form>
   </div>
 
-  <div class="side-stack">
-    <div class="panel">
-      <div class="panel-head"><h2>Risk Tiers · Active Tracks</h2></div>
-      <div class="panel-body">
-        <div class="tier-cards" id="tierCards">
-          <div class="tier-card safe"><div class="n">0</div><div class="lbl">Safe</div></div>
-          <div class="tier-card warn"><div class="n">0</div><div class="lbl">Watch</div></div>
-          <div class="tier-card crit"><div class="n">0</div><div class="lbl">Critical</div></div>
-        </div>
-        <div class="track-list" id="trackList">
-          <div class="empty-row">No active tracks</div>
-        </div>
+  <aside class="workspace-rail" aria-label="Risk and alerts">
+    <section class="rail-section">
+      <h2 class="rail-title">Active tracks</h2>
+      <div class="tier-cards" id="tierCards">
+        <div class="tier-card safe"><div class="n">0</div><div class="lbl">Safe</div></div>
+        <div class="tier-card warn"><div class="n">0</div><div class="lbl">Watch</div></div>
+        <div class="tier-card crit"><div class="n">0</div><div class="lbl">Critical</div></div>
+      </div>
+      <div class="track-list" id="trackList">
+        <div class="empty-row">No active tracks</div>
       </div>
       <div class="sparkline-wrap">
-        <canvas id="riskSpark"></canvas>
+        <div class="cap">Peak risk trend</div>
+        <canvas id="riskSpark" role="img" aria-label="Peak risk over recent frames"></canvas>
       </div>
-    </div>
+    </section>
 
-    <div class="panel">
-      <div class="panel-head"><h2>Alert Console</h2></div>
-      <div class="alert-console" id="alertConsole">
-        <div class="empty-row">No alerts yet — monitoring…</div>
+    <section class="rail-section grow">
+      <h2 class="rail-title">Alerts</h2>
+      <div class="alert-console rail-scroll" id="alertConsole">
+        <div class="empty-row">No alerts yet. Monitoring…</div>
       </div>
-    </div>
-  </div>
-</div>
+    </section>
+  </aside>
+</section>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/video-stage.js') }}"></script>
 <script src="{{ url_for('static', filename='js/live.js') }}"></script>
 {% endblock %}

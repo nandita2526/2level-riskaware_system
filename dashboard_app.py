@@ -28,7 +28,7 @@ from datetime import datetime
 from pathlib import Path
 
 import cv2
-from flask import Flask, Response, jsonify, render_template, request, send_from_directory
+from flask import Flask, Response, abort, jsonify, render_template, request, send_file, send_from_directory
 from werkzeug.utils import secure_filename
 
 from modules.pipeline import SurveillancePipeline
@@ -36,9 +36,33 @@ from modules.module7_evidence_manager import EvidenceManager
 from modules.utils import rule_label
 from modules import module8_video_upload_analyzer as upload_analyzer
 
-app = Flask(__name__, template_folder="dashboard/templates", static_folder="dashboard/static")
-
 PROJECT_ROOT = Path(__file__).resolve().parent
+
+
+def _find_dashboard_dir() -> Path:
+    """Locate the folder that contains templates/index.html + static/.
+    Normally <project>/dashboard, but this also finds it when the project was
+    unzipped into a nested folder or is launched from another directory."""
+    candidates = [PROJECT_ROOT / "dashboard", Path.cwd() / "dashboard"]
+    for base in (PROJECT_ROOT, Path.cwd()):
+        candidates += sorted(base.glob("*/dashboard"))
+        candidates += sorted(base.glob("*/*/dashboard"))
+    for c in candidates:
+        if (c / "templates" / "index.html").is_file():
+            return c.resolve()
+    raise SystemExit(
+        "\n[Riskwatch] Could not find dashboard/templates/index.html.\n"
+        f"  Looked next to: {PROJECT_ROOT}\n"
+        "  Make sure the 'dashboard' folder (with 'templates' and 'static' inside) "
+        "sits in the same folder as dashboard_app.py.\n")
+
+
+DASHBOARD_DIR = _find_dashboard_dir()
+print(f"[Riskwatch] Using dashboard folder: {DASHBOARD_DIR}")
+
+app = Flask(__name__,
+            template_folder=str(DASHBOARD_DIR / "templates"),
+            static_folder=str(DASHBOARD_DIR / "static"))
 UPLOADS_DIR = PROJECT_ROOT / "data" / "uploaded_videos"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 ALLOWED_VIDEO_EXT = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
@@ -251,6 +275,24 @@ def api_upload_status(job_id):
     if job is None:
         return jsonify({"ok": False, "error": "Unknown job_id"}), 404
     return jsonify({"ok": True, **job})
+
+
+@app.route("/api/upload/<job_id>/video")
+def api_upload_video_file(job_id):
+    """Streams an uploaded clip back to the browser (with HTTP range support, so
+    seeking works) for the Upload page's player. Read-only, and limited to files
+    inside the uploads folder."""
+    job = upload_analyzer.get_job(job_id)
+    if job is None:
+        abort(404)
+    path = Path(job.get("video_path") or "").resolve()
+    try:
+        path.relative_to(UPLOADS_DIR.resolve())
+    except ValueError:
+        abort(404)
+    if not path.is_file():
+        abort(404)
+    return send_file(path, conditional=True)
 
 
 # ======================================================================

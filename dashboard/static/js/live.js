@@ -1,5 +1,12 @@
 // live.js — powers the Live Camera page.
 
+// The feed is shown in the shared VideoStage component (fit/fill framing, zoom,
+// fullscreen, error + reconnect states). It keeps the element ids this file
+// has always used: #hudFrame (toggled for tier/switching states) and #feedImg.
+VideoStage.mount(document.getElementById("liveStage"), {
+  kind: "stream", src: "/video_feed", frameId: "hudFrame", mediaId: "feedImg", alt: "Live camera feed",
+});
+
 const POLL_MS = 1000;
 let lastAlertKey = null;
 let riskHistory = [];
@@ -50,7 +57,7 @@ function updateRiskGauge(maxRisk) {
   if (!fill || !val) return;
   const pct = Math.max(0, Math.min(1, Number(maxRisk) || 0));
   fill.style.strokeDashoffset = String(RISK_GAUGE_CIRC * (1 - pct));
-  fill.style.stroke = pct >= 0.7 ? "var(--tier-crit)" : pct >= 0.4 ? "var(--tier-warn)" : "var(--accent-live)";
+  fill.style.stroke = pct >= 0.7 ? "var(--danger)" : pct >= 0.4 ? "var(--warn)" : "var(--accent)";
   animateNumber(val, pct, { decimals: 2 });
 }
 
@@ -95,9 +102,10 @@ function drawSparkline(history) {
   vals.forEach((v, i) => ctx.lineTo(i * step, h - (v / max) * (h - 8) - 2));
   ctx.lineTo(w, h);
   ctx.closePath();
+  const accent = cssVar("--accent", "#6FA3EF");
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, "rgba(56,189,248,.35)");
-  grad.addColorStop(1, "rgba(56,189,248,0)");
+  grad.addColorStop(0, withAlpha(accent, 0.30));
+  grad.addColorStop(1, withAlpha(accent, 0));
   ctx.fillStyle = grad;
   ctx.fill();
 
@@ -107,7 +115,7 @@ function drawSparkline(history) {
     const x = i * step, y = h - (v / max) * (h - 8) - 2;
     i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
   });
-  ctx.strokeStyle = "#38BDF8";
+  ctx.strokeStyle = accent;
   ctx.lineWidth = 1.6;
   ctx.stroke();
 
@@ -116,14 +124,26 @@ function drawSparkline(history) {
   const lx = w, ly = h - (lastVal / max) * (h - 8) - 2;
   ctx.beginPath();
   ctx.arc(lx - 2, ly, 3, 0, Math.PI * 2);
-  ctx.fillStyle = "#38BDF8";
+  ctx.fillStyle = accent;
   ctx.fill();
+}
+
+// The pipeline emits alerts as plain records (track, behaviour, rules, risk),
+// not sentences — turn them into a readable line instead of dumping JSON.
+function describeAlert(raw) {
+  const rules = Array.isArray(raw.triggered_rules) ? raw.triggered_rules.join(", ") : (raw.triggered_rules || "");
+  const parts = [];
+  if (raw.track_id != null) parts.push(`Track #${raw.track_id}`);
+  if (raw.behaviour_class && raw.behaviour_class !== "Normal") parts.push(String(raw.behaviour_class).replace(/_/g, " "));
+  if (rules) parts.push(rules.replace(/_/g, " "));
+  if (typeof raw.risk_score === "number") parts.push(`risk ${raw.risk_score.toFixed(2)}`);
+  return parts.length ? parts.join(" · ") : JSON.stringify(raw);
 }
 
 function normalizeAlert(raw, level) {
   if (typeof raw === "string") return { text: raw, level, time: "" };
   return {
-    text: raw.message || raw.text || raw.description || JSON.stringify(raw),
+    text: raw.message || raw.text || raw.description || describeAlert(raw),
     level,
     time: raw.time || raw.timestamp || "",
   };
@@ -137,7 +157,7 @@ function renderAlertConsole(recentAlerts, recentWarnings) {
   const console_ = document.getElementById("alertConsole");
 
   if (!items.length) {
-    console_.innerHTML = `<div class="empty-row">No alerts yet — monitoring…</div>`;
+    console_.innerHTML = `<div class="empty-row">No alerts yet. Monitoring…</div>`;
     return;
   }
 
@@ -155,9 +175,9 @@ function renderAlertConsole(recentAlerts, recentWarnings) {
 
   console_.innerHTML = items.slice(0, 25).map(a => `
     <div class="alert-row">
-      <span class="alert-tag ${a.level === 2 ? "l2" : "l1"}">L${a.level}</span>
-      <span class="alert-text">${a.text}</span>
-      ${a.time ? `<span class="alert-time">${a.time}</span>` : ""}
+      <span class="alert-tag ${a.level === 2 ? "l2" : "l1"}" title="${a.level === 2 ? "Level 2 · AI-verified critical" : "Level 1 · rule-based warning"}">L${a.level}</span>
+      <span class="alert-text">${esc(a.text)}</span>
+      ${a.time ? `<span class="alert-time">${esc(a.time)}</span>` : ""}
     </div>
   `).join("");
 }
@@ -171,6 +191,12 @@ async function pollStats() {
     animateNumber(document.getElementById("hudFps"), data.fps ?? 0, { decimals: fpsIsInt ? 0 : 1, duration: 300 });
     animateNumber(document.getElementById("hudUptime"), data.uptime_seconds ?? 0, { decimals: 0, duration: 300 });
     animateNumber(document.getElementById("hudFrames"), data.frame_count ?? 0, { decimals: 0, duration: 300 });
+
+    const camEl = document.getElementById("hudCamera");
+    if (camEl) {
+      camEl.textContent = data.camera_id || "";
+      camEl.title = data.source ? `Source: ${data.source}` : "";
+    }
 
     renderTierCards(data.tier_counts);
     renderAlertConsole(data.recent_alerts, data.recent_warnings);
@@ -219,10 +245,16 @@ document.getElementById("switchSourceBtn").addEventListener("click", async () =>
     showToast("Could not reach the server", "critical");
     hudFrame.classList.remove("switching");
   } finally {
-    btn.textContent = "Switch Source";
+    btn.textContent = "Switch source";
     btn.disabled = false;
   }
 });
+
+["sourceInput", "cameraIdInput"].forEach(id =>
+  document.getElementById(id).addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); document.getElementById("switchSourceBtn").click(); }
+  })
+);
 
 window.addEventListener("resize", () => drawSparkline(riskHistory));
 
